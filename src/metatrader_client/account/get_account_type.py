@@ -13,10 +13,10 @@ def get_account_type(connection) -> str:
     account_info = get_account_info(connection)
     trade_mode = account_info["trade_mode"]
     if trade_mode == 0:
-        return "real"
-    elif trade_mode == 1:
         return "demo"
-    elif trade_mode == 2:
+    elif trade_mode == 1:
         return "contest"
+    elif trade_mode == 2:
+        return "real"
     else:
         return f"unknown ({trade_mode})"
