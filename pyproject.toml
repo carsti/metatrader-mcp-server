@@ -48,6 +48,12 @@ dependencies = [
 where = ["src"]
 include = ["metatrader_mcp*", "metatrader_client*", "metatrader_openapi*", "metatrader_quote*"]
 
+[tool.pytest.ini_options]
+# Test the source tree, not whatever happens to be installed in site-packages.
+# Without this, a non-editable `pip install .` leaves a stale copy that shadows
+# src/ and the suite silently validates the wrong code.
+pythonpath = ["src"]
+
 [project.urls]
 "Homepage" = "https://github.com/ariadng/metatrader-mcp-server"
 "Bug Tracker" = "https://github.com/ariadng/metatrader-mcp-server/issues"

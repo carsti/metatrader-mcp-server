@@ -109,7 +109,33 @@ def test_get_account_type(mt5_account):
     print(f"Account Type: {acc_type}")
     assert isinstance(acc_type, str)
     assert len(acc_type) > 0
+    assert acc_type in ("demo", "contest", "real") or acc_type.startswith("unknown")
     print("✅ get_account_type passed!")
+
+@pytest.mark.parametrize("trade_mode,expected", [
+    (0, "demo"),
+    (1, "contest"),
+    (2, "real"),
+])
+def test_account_type_mapping(trade_mode, expected):
+    """ENUM_ACCOUNT_TRADE_MODE is DEMO=0, CONTEST=1, REAL=2.
+
+    Pinned because these were once mapped one place off, reporting a demo
+    account as "real" and a real account as "contest". Callers use this field to
+    decide whether live money is at stake, so a silent flip is expensive. No live
+    connection needed - the mapping is what is under test.
+    """
+    import importlib
+    from unittest.mock import patch
+
+    mod = importlib.import_module("metatrader_client.account.get_account_type")
+
+    class _Conn:
+        def is_connected(self):
+            return True
+
+    with patch.object(mod, "get_account_info", return_value={"trade_mode": trade_mode}):
+        assert mod.get_account_type(_Conn()) == expected
 
 def test_is_trade_allowed(mt5_account):
     print("\n✅ Testing is_trade_allowed...")
