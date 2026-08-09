@@ -10,6 +10,7 @@ from .get_account_type import (
     get_account_type,
     blocks_live_trading,
     classify_account,
+    classify_trade_mode,
 )
 from .is_trade_allowed import is_trade_allowed
 from .check_margin_level import check_margin_level
@@ -27,6 +28,7 @@ __all__ = [
     "get_account_type",
     "blocks_live_trading",
     "classify_account",
+    "classify_trade_mode",
     "is_trade_allowed",
     "check_margin_level",
     "get_trade_statistics",

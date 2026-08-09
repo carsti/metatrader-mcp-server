@@ -49,6 +49,11 @@ Returns `(label, blocks_live)` from a **single** read of the account info — us
 it instead of calling `get_account_type()` and `blocks_live_trading()` back to
 back, which costs two round-trips to the terminal.
 
+### `classify_trade_mode(trade_mode) -> tuple[str, bool]`
+The same classification as a pure function, for callers that already hold an
+`account_info` dict and must not pay for a second read. `get_trade_statistics()`
+uses it for exactly that reason.
+
 ---
 
 > **Heads up:** Know your account type before you trade for real! 🧐

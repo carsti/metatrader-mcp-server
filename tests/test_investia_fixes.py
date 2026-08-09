@@ -151,14 +151,49 @@ def test_guardas_estao_exportadas_no_pacote():
 
     assert pacote.blocks_live_trading is _tipo.blocks_live_trading
     assert pacote.classify_account is _tipo.classify_account
+    assert pacote.classify_trade_mode is _tipo.classify_trade_mode
     assert "blocks_live_trading" in pacote.__all__
     assert "classify_account" in pacote.__all__
+    assert "classify_trade_mode" in pacote.__all__
 
 
 def test_docstring_do_trade_mode_segue_o_enum():
     doc = _info.get_account_info.__doc__
     assert "0-demo, 1-contest, 2-real" in doc
     assert "0-real" not in doc
+
+
+@pytest.mark.parametrize(
+    "trade_mode,esperado",
+    [(0, ("demo", False)), (1, ("contest", False)), (2, ("real", True)),
+     (99, ("unknown (99)", True))],
+)
+def test_classify_trade_mode_e_pura(trade_mode, esperado):
+    """Classifica sem tocar no terminal -- é o que permite o round-trip único."""
+    assert _tipo.classify_trade_mode(trade_mode) == esperado
+
+
+def test_get_trade_statistics_faz_um_unico_round_trip(monkeypatch):
+    """
+    Antes eram dois: get_account_info na própria função mais o de dentro de
+    get_account_type. Trocar por classify_account não teria resolvido -- ele
+    também lê. Só a classificação pura corta a segunda leitura.
+    """
+    conta = {
+        "trade_mode": 0, "balance": 1.0, "equity": 1.0, "profit": 0.0,
+        "margin_level": 0.0, "margin_free": 1.0, "leverage": 100,
+        "currency": "BRL",
+    }
+    chamadas = []
+
+    def _contando(_c):
+        chamadas.append(1)
+        return dict(conta)
+
+    monkeypatch.setattr(_stats, "get_account_info", _contando)
+    monkeypatch.setattr(_tipo, "get_account_info", _contando)
+    assert _stats.get_trade_statistics(_Conn())["account_type"] == "demo"
+    assert len(chamadas) == 1
 
 
 def test_rotulo_corrigido_chega_ao_consumidor_real(monkeypatch):

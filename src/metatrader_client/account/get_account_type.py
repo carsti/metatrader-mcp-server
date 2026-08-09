@@ -17,24 +17,18 @@ _TRADE_MODE = {0: "demo", 1: "contest", 2: "real"}
 _SIMULATED_MODES = frozenset({0, 1})
 
 
-def classify_account(connection) -> tuple:
+def classify_trade_mode(trade_mode) -> tuple:
     """
-    Read the account trade mode once and derive both facts callers need.
+    Classify a raw ENUM_ACCOUNT_TRADE_MODE value. Pure: touches no terminal.
 
     Returns:
         tuple: ``(label, blocks_live)``. ``label`` is "demo", "contest", "real"
         or ``"unknown (<value>)"``. ``blocks_live`` is the fail-closed guard
         documented in :func:`blocks_live_trading`.
 
-    This function exists so that a caller needing both facts pays a single
-    round-trip to the terminal instead of two.
-
-    Raises:
-        AccountInfoError: If account information cannot be retrieved.
-        ConnectionError: If not connected to terminal.
+    Split out from :func:`classify_account` so a caller that already holds an
+    ``account_info`` dict can classify without paying for a second read.
     """
-    account_info = get_account_info(connection)
-    trade_mode = account_info["trade_mode"]
     try:
         simulated = trade_mode in _SIMULATED_MODES
         label = _TRADE_MODE.get(trade_mode, f"unknown ({trade_mode})")
@@ -46,6 +40,24 @@ def classify_account(connection) -> tuple:
         simulated = False
         label = f"unknown ({trade_mode!r})"
     return label, not simulated
+
+
+def classify_account(connection) -> tuple:
+    """
+    Read the account trade mode once and derive both facts callers need.
+
+    Returns:
+        tuple: ``(label, blocks_live)``, as described in
+        :func:`classify_trade_mode`.
+
+    This function exists so that a caller needing both facts pays a single
+    round-trip to the terminal instead of two.
+
+    Raises:
+        AccountInfoError: If account information cannot be retrieved.
+        ConnectionError: If not connected to terminal.
+    """
+    return classify_trade_mode(get_account_info(connection)["trade_mode"])
 
 
 def get_account_type(connection) -> str:
