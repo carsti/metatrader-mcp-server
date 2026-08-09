@@ -1,9 +1,9 @@
 from typing import Dict, Any, List, Optional
-from datetime import datetime, timedelta
 import logging
 import MetaTrader5 as mt5  # type: ignore
 # pylint: disable=no-member
 from ..exceptions import OrdersHistoryError, ConnectionError
+from ._time_window import normalize_window
 
 logger = logging.getLogger("MT5History")
 
@@ -21,15 +21,7 @@ def get_orders(
         orders = None
         logger.debug(f"Retrieving orders with parameters: from_date={from_date}, to_date={to_date}, group={group}")
         try:
-            if from_date is None:
-                from_date = datetime.now() - timedelta(days=30)
-            else:
-                from_date = datetime.strptime(from_date, '%Y-%m-%d')
-        
-            if to_date is None:
-                to_date = datetime.now()
-            else:
-                to_date = datetime.strptime(to_date, '%Y-%m-%d')
+            from_date, to_date = normalize_window(from_date, to_date)
             if group is not None:
                 orders = mt5.history_orders_get(from_date, to_date, group=group)
             else:

@@ -1,7 +1,7 @@
 from typing import Dict, Any
 from ..exceptions import AccountInfoError, ConnectionError
 from .get_account_info import get_account_info
-from .get_account_type import get_account_type
+from .get_account_type import classify_trade_mode
 
 def get_trade_statistics(connection) -> Dict[str, Any]:
     """
@@ -21,13 +21,17 @@ def get_trade_statistics(connection) -> Dict[str, Any]:
         ConnectionError: If not connected to terminal.
     """
     account_info = get_account_info(connection)
+    # Classify from the dict already in hand. Calling get_account_type() or
+    # classify_account() here would re-read the account from the terminal, and
+    # this feeds the most-used MCP tool (get_account_info).
+    account_type, _ = classify_trade_mode(account_info["trade_mode"])
     stats = {
         "balance": account_info["balance"],
         "equity": account_info["equity"],
         "profit": account_info["profit"],
         "margin_level": account_info["margin_level"],
         "free_margin": account_info["margin_free"],
-        "account_type": get_account_type(connection),
+        "account_type": account_type,
         "leverage": account_info["leverage"],
         "currency": account_info["currency"],
     }

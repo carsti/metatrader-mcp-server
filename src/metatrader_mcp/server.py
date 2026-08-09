@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 import argparse
+import json
 import logging
 from dotenv import load_dotenv
 
@@ -66,11 +67,24 @@ def get_orders(ctx: Context, from_date: Optional[str] = None, to_date: Optional[
 	df = client.history.get_orders_as_dataframe(from_date=from_date, to_date=to_date, group=symbol)
 	return df.to_csv() if hasattr(df, 'to_csv') else str(df)
 
-def get_candles_by_date(ctx: Context, symbol_name: str, timeframe: str, from_date: str = None, to_date: str = None) -> str:
+@mcp.tool()
+def get_candles_by_date(ctx: Context, symbol_name: str, timeframe: str, from_date: Optional[str] = None, to_date: Optional[str] = None) -> str:
 	"""Get candle data for a symbol in a given timeframe and date range as CSV. Date input in format: ISO 8601 or 'YYYY-MM-DD' or 'YYYY-MM-DD HH:MM'."""
 	client = get_client(ctx)
 	df = client.market.get_candles_by_date(symbol_name=symbol_name, timeframe=timeframe, from_date=from_date, to_date=to_date)
 	return df.to_csv() if hasattr(df, 'to_csv') else str(df)
+
+@mcp.tool()
+def get_symbol_info(ctx: Context, symbol_name: str) -> str:
+	"""Get the full contract specification for a symbol as JSON: volume_min, volume_max, volume_step, digits, point, trade_stops_level, trade_contract_size, currency_base/profit/margin. Required before sizing any order or computing margin."""
+	client = get_client(ctx)
+	info = client.market.get_symbol_info(symbol_name)
+	if not info:
+		raise ValueError(
+			f"No contract specification returned for '{symbol_name}'. "
+			"Check the symbol name and make sure it is selected in Market Watch."
+		)
+	return json.dumps(info, default=str, ensure_ascii=False)
 
 @mcp.tool()
 def get_candles_latest(ctx: Context, symbol_name: str, timeframe: str, count: int = 100) -> str:

@@ -53,7 +53,7 @@ if conn.connect():
 - [**get_margin_level()**](account/get_margin_level.md): Get the margin level percentage.
 - [**get_currency()**](account/get_currency.md): Get the account's base currency.
 - [**get_leverage()**](account/get_leverage.md): Get the account leverage.
-- [**get_account_type()**](account/get_account_type.md): Get the type of account (e.g., demo, real).
+- [**get_account_type()**](account/get_account_type.md): Get the type of account ("demo", "contest" or "real"), plus the `blocks_live_trading()` fail-closed guard and the `classify_account()` / `classify_trade_mode()` single-read helpers.
 - [**is_trade_allowed()**](account/is_trade_allowed.md): Check if trading is currently allowed on the account.
 - [**check_margin_level(min_level=100.0)**](account/check_margin_level.md): Check if margin level is above a minimum threshold.
 - [**get_trade_statistics()**](account/get_trade_statistics.md): Retrieve trade statistics as a dictionary.

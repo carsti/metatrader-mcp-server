@@ -1,10 +1,10 @@
 from typing import Dict, Any, List, Optional
-from datetime import datetime, timedelta
 import logging
 
 import MetaTrader5 as mt5  # type: ignore
 # pylint: disable=no-member
 from ..exceptions import DealsHistoryError, ConnectionError
+from ._time_window import normalize_window
 
 logger = logging.getLogger("MT5History")
 
@@ -23,15 +23,7 @@ def get_deals(
     logger.debug(f"Retrieving deals with parameters: from_date={from_date}, to_date={to_date}, group={group}")
     
     try:
-        if from_date is None:
-            from_date = datetime.now() - timedelta(days=30)
-        else:
-            from_date = datetime.strptime(from_date, "%Y-%m-%d") if isinstance(from_date, str) else from_date
-
-        if to_date is None:
-            to_date = datetime.now()
-        else:
-            to_date = datetime.strptime(to_date, "%Y-%m-%d") if isinstance(to_date, str) else to_date
+        from_date, to_date = normalize_window(from_date, to_date)
 
         logger.debug(f"Retrieving deals by date range: {from_date} to {to_date}")
         if group is not None:
