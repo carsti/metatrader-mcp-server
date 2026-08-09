@@ -6,7 +6,11 @@ from .get_free_margin import get_free_margin
 from .get_margin_level import get_margin_level
 from .get_currency import get_currency
 from .get_leverage import get_leverage
-from .get_account_type import get_account_type
+from .get_account_type import (
+    get_account_type,
+    blocks_live_trading,
+    classify_account,
+)
 from .is_trade_allowed import is_trade_allowed
 from .check_margin_level import check_margin_level
 from .get_trade_statistics import get_trade_statistics
@@ -21,6 +25,8 @@ __all__ = [
     "get_currency",
     "get_leverage",
     "get_account_type",
+    "blocks_live_trading",
+    "classify_account",
     "is_trade_allowed",
     "check_margin_level",
     "get_trade_statistics",
