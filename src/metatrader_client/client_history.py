@@ -175,19 +175,21 @@ class MT5History:
         self,
         from_date: Optional[datetime] = None,
         to_date: Optional[datetime] = None,
-        group: Optional[str] = None
+        group: Optional[str] = None,
+        full: bool = False,
     ) -> pd.DataFrame:
         from .history import get_deals_as_dataframe
         if group is not None:
             group = "*" + group + "*"
-        return get_deals_as_dataframe(self._connection, from_date, to_date, group)
-    
+        return get_deals_as_dataframe(self._connection, from_date, to_date, group, full)
+
     def get_orders_as_dataframe(
         self,
         from_date: Optional[datetime] = None,
         to_date: Optional[datetime] = None,
-        group: Optional[str] = None
+        group: Optional[str] = None,
+        full: bool = False,
     ) -> pd.DataFrame:
         from .history import get_orders_as_dataframe
-        return get_orders_as_dataframe(self._connection, from_date, to_date, group)
+        return get_orders_as_dataframe(self._connection, from_date, to_date, group, full)
 

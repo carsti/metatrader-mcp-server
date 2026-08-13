@@ -24,9 +24,10 @@ def market_client(monkeypatch):
     return client
 
 
-def candles_frame(records, errors=None):
+def candles_frame(records, errors=None, truncated=None):
     df = pd.DataFrame(records)
     df.attrs["errors"] = errors or []
+    df.attrs["truncated"] = truncated or []
     return df
 
 
@@ -46,6 +47,7 @@ def test_candles_latest_single_pair(market_client):
     assert response.json() == {
         "data": [{"time": "2026-08-13T14:00:00", "open": 1.16412, "close": 1.16471}],
         "errors": [],
+        "truncated": [],
     }
     market_client.market.get_candles_latest.assert_called_once_with(
         symbol_name=["EURUSD"], timeframe=["H1"], count=2, group=None
@@ -106,6 +108,7 @@ def test_candles_by_date_single_pair(market_client):
             {"time": "2023-01-01T01:00:00", "open": 1.102, "close": 1.107},
         ],
         "errors": [],
+        "truncated": [],
     }
     market_client.market.get_candles_by_date.assert_called_once_with(
         symbol_name=["EURUSD"],
@@ -113,6 +116,7 @@ def test_candles_by_date_single_pair(market_client):
         from_date=datetime.fromisoformat("2023-01-01T00:00:00"),
         to_date=datetime.fromisoformat("2023-01-01T05:00:00"),
         group=None,
+        limit=100,
     )
 
 
@@ -139,6 +143,7 @@ def test_candles_by_date_surfaces_partial_errors(market_client):
         from_date=datetime.fromisoformat("2023-01-01T00:00:00"),
         to_date=datetime.fromisoformat("2023-01-02T00:00:00"),
         group="symbol",
+        limit=100,
     )
 
 
@@ -152,7 +157,7 @@ def test_candles_by_date_no_data(market_client):
         )
 
     assert response.status_code == 200, response.text
-    assert response.json() == {"data": [], "errors": []}
+    assert response.json() == {"data": [], "errors": [], "truncated": []}
 
 
 def test_candles_by_date_value_error(market_client):
@@ -198,7 +203,7 @@ def test_get_symbol_info_success(market_client):
 
     assert response.status_code == 200, response.text
     assert response.json() == sample_symbol_info
-    market_client.market.get_symbol_info.assert_called_once_with(symbol_name="EURUSD")
+    market_client.market.get_symbol_info.assert_called_once_with(symbol_name="EURUSD", full=False)
 
 
 def test_get_symbol_info_not_found(market_client):

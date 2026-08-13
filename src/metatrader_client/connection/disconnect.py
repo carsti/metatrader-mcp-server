@@ -17,6 +17,8 @@ def disconnect(connection):
         result = mt5.shutdown()
         if result:
             connection._connected = False
+            from ..market.get_symbols import clear_symbols_cache
+            clear_symbols_cache()
             logger.info("Successfully disconnected from MetaTrader 5 terminal")
             return True
         else:

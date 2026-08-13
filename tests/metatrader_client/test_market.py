@@ -196,6 +196,37 @@ def test_get_candles_all_pairs_failing_still_raises(mt5_market):
     with pytest.raises(Exception):
         mt5_market.get_candles_latest(["INVALID_A", "INVALID_B"], TEST_TIMEFRAME, count=5)
 
+def test_get_candles_by_date_respects_the_limit(mt5_market):
+    from datetime import datetime, timedelta
+    to_date = datetime.now().strftime("%Y-%m-%d")
+    from_date = (datetime.now() - timedelta(days=5)).strftime("%Y-%m-%d")
+    candles = mt5_market.get_candles_by_date(TEST_SYMBOL, "M1", from_date, to_date, limit=10)
+    assert len(candles) == 10
+    # Five days of M1 candles is far more than ten, so this must be reported.
+    assert candles.attrs["truncated"][0]["returned"] == 10
+    assert candles.attrs["truncated"][0]["available"] > 10
+
+def test_get_candles_by_date_limit_applies_per_pair(mt5_market):
+    from datetime import datetime, timedelta
+    to_date = datetime.now().strftime("%Y-%m-%d")
+    from_date = (datetime.now() - timedelta(days=5)).strftime("%Y-%m-%d")
+    candles = mt5_market.get_candles_by_date(
+        [TEST_SYMBOL, TEST_SYMBOL_2], ["M1", "M5"], from_date, to_date, limit=10
+    )
+    assert len(candles) == 40
+
+def test_get_candles_by_date_rejects_a_bad_limit(mt5_market):
+    with pytest.raises(ValueError):
+        mt5_market.get_candles_by_date(TEST_SYMBOL, TEST_TIMEFRAME, limit=0)
+
+def test_get_symbol_info_is_lean_by_default(mt5_market):
+    from metatrader_client.market.get_symbol_info import SYMBOL_INFO_FIELDS
+    lean = mt5_market.get_symbol_info(TEST_SYMBOL)
+    full = mt5_market.get_symbol_info(TEST_SYMBOL, full=True)
+    assert set(lean).issubset(set(SYMBOL_INFO_FIELDS))
+    assert len(full) > len(lean)
+    assert lean["name"] == TEST_SYMBOL
+
 def test_get_candles_by_date_many_symbols(mt5_market):
     from datetime import datetime, timedelta
     to_date = datetime.now().strftime("%Y-%m-%d")

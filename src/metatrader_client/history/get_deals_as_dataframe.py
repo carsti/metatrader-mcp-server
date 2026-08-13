@@ -7,14 +7,44 @@ from ..exceptions import DealsHistoryError
 
 logger = logging.getLogger("MT5History")
 
+# mt5 returns 18 fields per deal. These are the ones that inform a decision;
+# the rest are redundant with another field ('order' with 'position_id',
+# 'time_msc' with the index), constant for manual trading ('magic', 'fee'), or
+# broker-internal ('reason', 'external_id'). Pass full=True to get them all.
+DEAL_COLUMNS = (
+    "ticket",
+    "symbol",
+    "type",
+    "entry",
+    "position_id",
+    "volume",
+    "price",
+    "commission",
+    "swap",
+    "profit",
+    "comment",
+)
+
+
 def get_deals_as_dataframe(
     connection,
     from_date: Optional[datetime] = None,
     to_date: Optional[datetime] = None,
-    group: Optional[str] = None
+    group: Optional[str] = None,
+    full: bool = False,
 ) -> pd.DataFrame:
     """
-    Get historical deals as a pandas DataFrame.
+    Get historical deals as a pandas DataFrame, indexed by time.
+
+    Args:
+        connection: MT5 connection object
+        from_date: Start of the range (default: 30 days ago)
+        to_date: End of the range (default: now)
+        group: Symbol filter pattern
+        full: Return every field mt5 provides instead of DEAL_COLUMNS (default: False)
+
+    Returns:
+        pd.DataFrame: Deals indexed by 'time', newest handling left to the caller.
     """
 
     try:
@@ -26,6 +56,8 @@ def get_deals_as_dataframe(
         if 'time' in df.columns:
             df['time'] = pd.to_datetime(df['time'], unit='s')
             df.set_index('time', inplace=True)
+        if not full:
+            df = df[[column for column in DEAL_COLUMNS if column in df.columns]]
         logger.debug(f"Created DataFrame with {len(df)} deals.")
         return df
     except DealsHistoryError:

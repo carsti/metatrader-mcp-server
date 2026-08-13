@@ -11,10 +11,13 @@ def connect(connection):
     from metatrader_client.exceptions import ConnectionError, InitializationError, LoginError
     from ._initialize_terminal import _initialize_terminal
     from ._login import _login
+    from ..market.get_symbols import clear_symbols_cache
     try:
         _initialize_terminal(connection)
         _login(connection)
         connection._connected = True
+        # A new session may be a different account with a different symbol set.
+        clear_symbols_cache()
         logger.info("Successfully connected to MetaTrader 5 terminal")
         return True
     except (InitializationError, LoginError) as e:

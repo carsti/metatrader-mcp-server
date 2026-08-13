@@ -6,32 +6,84 @@ import pandas as pd
 from metatrader_client import client
 
 
-def candles_to_csv(df: Any) -> str:
-	"""Render a candle DataFrame as CSV, appending any partial-failure report.
+# Candle timestamps always land on a minute boundary and are always UTC, so the
+# seconds and the offset repeat identically on every row.
+CANDLE_TIME_FORMAT = "%Y-%m-%dT%H:%M"
 
-	The candle fetchers return what they could retrieve and record the pairs
-	they could not in ``df.attrs['errors']``. Those are appended after the data
-	as a second, clearly marked CSV block so a single string carries both.
+# Volume and spread fields that some brokers never populate. A column of nothing
+# but zeros carries no information, so it is dropped rather than repeated.
+CANDLE_OPTIONAL_COLUMNS = ("real_volume", "spread")
+
+
+def frame_to_csv(df: Any, index: bool = False) -> str:
+	"""Render a DataFrame as CSV for an MCP payload.
+
+	Args:
+		df: The DataFrame (anything else is stringified).
+		index: Keep the index. Only worth it when the index carries data, as in
+			the history frames where it holds the timestamp.
+
+	Returns:
+		str: The CSV, with the line terminator pinned so the payload does not
+		become CRLF on Windows.
+	"""
+	if not isinstance(df, pd.DataFrame):
+		return str(df)
+	return df.to_csv(index=index, lineterminator="\n")
+
+
+def candles_to_csv(df: Any) -> str:
+	"""Render a candle DataFrame as CSV, appending any per-pair reports.
+
+	The candle fetchers return what they could retrieve and record what they
+	could not in ``df.attrs``: pairs that failed under 'errors', and pairs with
+	more candles available than the limit allowed under 'truncated'. Those are
+	appended after the data as separate, clearly marked CSV blocks so a single
+	string carries all three.
 
 	Args:
 		df: DataFrame returned by a candle operation (anything else is stringified).
 
 	Returns:
 		str: The candles as CSV without the index, optionally followed by a
-		blank line, a '# errors' marker and one row per failed pair.
+		'# truncated' block and an '# errors' block.
 	"""
 	if not isinstance(df, pd.DataFrame):
 		return str(df)
 
-	# lineterminator is pinned so the payload does not become CRLF on Windows.
-	csv = df.to_csv(index=False, lineterminator="\n")
-	errors = df.attrs.get("errors") or []
-	if not errors:
-		return csv
+	blocks = [frame_to_csv(_compact(df))]
+	blocks.extend(
+		_report(df.attrs.get("truncated"), "truncated", ["symbol", "timeframe", "returned", "available"])
+	)
+	blocks.extend(_report(df.attrs.get("errors"), "errors", ["symbol", "timeframe", "error"]))
+	return "\n".join(blocks)
 
-	report = pd.DataFrame(errors, columns=["symbol", "timeframe", "error"])
+
+def _compact(df: "pd.DataFrame") -> "pd.DataFrame":
+	"""Drop what repeats on every row: the timestamp tail and all-zero columns."""
+	if df.empty:
+		return df
+
+	view = df
+	if "time" in view.columns and pd.api.types.is_datetime64_any_dtype(view["time"]):
+		view = view.copy()
+		view["time"] = view["time"].dt.strftime(CANDLE_TIME_FORMAT)
+
+	empty = [
+		column
+		for column in CANDLE_OPTIONAL_COLUMNS
+		if column in view.columns and (view[column] == 0).all()
+	]
+	return view.drop(columns=empty) if empty else view
+
+
+def _report(rows: Any, name: str, columns: list) -> list:
+	"""Render a trailing '# <name>' CSV block, or nothing when there is no data."""
+	if not rows:
+		return []
+	report = pd.DataFrame(rows, columns=columns)
 	report_csv = report.to_csv(index=False, lineterminator="\n")
-	return f"{csv}\n# errors\n{report_csv}"
+	return [f"# {name}\n{report_csv}"]
 
 
 def resolve_transport_config(transport=None, host=None, port=None):

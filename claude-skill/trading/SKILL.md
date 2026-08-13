@@ -25,10 +25,13 @@ This is **financial software**. Every trade action involves real money. Be preci
 | Tool | Parameters | Returns |
 |------|-----------|---------|
 | `get_symbol_price` | `symbol_name: str` | dict: bid, ask, last, volume, time |
-| `get_candles_latest` | `symbol_name: str \| list`, `timeframe: str \| list`, `count: int = 100`, `group: str = None` | CSV: time, open, high, low, close, tick_volume, spread, real_volume |
-| `get_candles_by_date` | `symbol_name: str \| list`, `timeframe: str \| list`, `from_date: str`, `to_date: str`, `group: str = None` | same CSV columns, for the given date range |
+| `get_symbol_info` | `symbol_name: str`, `full: bool = False` | dict: digits, point, spread, volume_min/max/step, contract size, tick size/value, swaps, trade_mode |
+| `get_candles_latest` | `symbol_name: str \| list`, `timeframe: str \| list`, `count: int = 100`, `group: str = None` | CSV: time, open, high, low, close, tick_volume, spread |
+| `get_candles_by_date` | `symbol_name: str \| list`, `timeframe: str \| list`, `from_date: str`, `to_date: str`, `group: str = None`, `limit: int = 100` | same CSV columns, for the given date range |
 | `get_all_symbols` | (none) | list of all symbol names |
 | `get_symbols` | `group: str` (e.g., `*USD*`) | list of filtered symbol names |
+
+**Check `get_symbol_info` before sizing an order.** `volume_min`, `volume_max` and `volume_step` decide whether a volume is accepted at all, and `digits` decides price rounding.
 
 Both candle tools take one value or a list for `symbol_name` and `timeframe`, and fetch every combination in a single call. A `symbol` and/or `timeframe` column is prepended only for the dimension that varies — one symbol on one timeframe returns the plain candle columns.
 
@@ -38,7 +41,14 @@ Both candle tools take one value or a list for `symbol_name` and `timeframe`, an
 - `symbol` — blocked by symbol, then timeframe, then time descending
 - `none` (default) — one stream ordered by time descending, no blocks
 
-A pair that cannot be fetched does not fail the call: it is listed in a trailing `# errors` CSV block after a blank line. The call only raises if every pair failed.
+**Row counts multiply.** `count` (or `limit`) applies per (symbol, timeframe) pair, so three symbols on three timeframes at 100 is 900 rows. Raise it deliberately.
+
+Two trailing CSV blocks may follow the data, each after a blank line:
+
+- `# truncated` — pairs that had more candles available than `limit` allowed, with `returned` and `available` counts. Narrow the date range or raise `limit` if you need the rest.
+- `# errors` — pairs that could not be fetched. The call only raises if **every** pair failed.
+
+Timestamps come back as `YYYY-MM-DDTHH:MM` in UTC. A column that is entirely zero (usually `real_volume`) is omitted.
 
 ### Open Positions
 

@@ -7,7 +7,7 @@ def get_orders_as_dataframe(
     from_date: Optional[datetime] = None,
     to_date: Optional[datetime] = None,
     group: Optional[str] = None,
-    ticket: Optional[int] = None
+    full: bool = False
 ) -> pd.DataFrame
 ```
 
@@ -19,10 +19,18 @@ Fetches historical orders and returns them as a pandas DataFrame for easy data c
 - **from_date**: Start date for history (default: 30 days ago)
 - **to_date**: End date for history (default: now)
 - **group**: (Optional) Filter by group
-- **ticket**: (Optional) Filter by ticket number
+- **full**: Return every field mt5 provides instead of the working subset (default: False)
 
 ## Returns
 - **pd.DataFrame**: Orders as a DataFrame, indexed by setup time if available.
+
+## Columns
+
+mt5 returns 24 fields per historical order. The default keeps the 11 that inform a decision:
+
+`ticket`, `time_done`, `symbol`, `type`, `state`, `volume_initial`, `price_open`, `sl`, `tp`, `position_id`, `comment` — plus `time_setup` as the index.
+
+Left out: the `_msc` twins of timestamps already present, fields that are zero once an order completes (`volume_current`, `price_stoplimit`, `time_expiration`), `magic` (constant for manual trading), and broker-internal fields. The list lives in `ORDER_COLUMNS`; pass `full=True` to get everything.
 
 ## Raises
 - `OrdersHistoryError` if DataFrame creation fails

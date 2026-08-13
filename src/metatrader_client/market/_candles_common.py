@@ -11,7 +11,9 @@ from typing import Any, Dict, List, NamedTuple, Optional, Sequence, Tuple, Union
 
 import pandas as pd
 
-from ..exceptions import MarketDataError
+from ..exceptions import InvalidTimeframeError, MarketDataError, SymbolNotFoundError
+from ..types import Timeframe
+from .get_symbols import get_symbols
 
 GROUP_TIMEFRAME = "timeframe"
 GROUP_SYMBOL = "symbol"
@@ -25,13 +27,15 @@ _TIMEFRAME_RANK = "_timeframe_rank"
 class CandleResult(NamedTuple):
     """Outcome of fetching a single (symbol, timeframe) pair.
 
-    Exactly one of ``frame`` and ``error`` is set.
+    Exactly one of ``frame`` and ``error`` is set. ``available`` is the row
+    count before a limit was applied, and is None when nothing was trimmed.
     """
 
     symbol: str
     timeframe: str
     frame: Optional[pd.DataFrame]
     error: Optional[BaseException]
+    available: Optional[int] = None
 
 
 def normalize_list(value: Union[str, Sequence[str], None]) -> List[str]:
@@ -99,6 +103,60 @@ def validate_group(group: Optional[str]) -> str:
     return normalized
 
 
+def validate_symbols(connection, symbols: Sequence[str]) -> Dict[str, Optional[BaseException]]:
+    """Look each symbol up once, not once per (symbol, timeframe) pair.
+
+    Args:
+        connection: MT5 connection object
+        symbols: Symbol names to check
+
+    Returns:
+        Dict[str, Optional[BaseException]]: name -> None when usable, otherwise
+        the error to attribute to every pair using that symbol.
+    """
+    checked: Dict[str, Optional[BaseException]] = {}
+    for name in symbols:
+        checked[name] = (
+            None if get_symbols(connection, name)
+            else SymbolNotFoundError(f"Symbol '{name}' not found")
+        )
+    return checked
+
+
+def validate_timeframes(
+    timeframes: Sequence[str],
+) -> Tuple[Dict[str, Any], Dict[str, BaseException]]:
+    """Resolve each timeframe name to its MT5 code once.
+
+    Args:
+        timeframes: Timeframe names to resolve
+
+    Returns:
+        Tuple[Dict[str, Any], Dict[str, BaseException]]: the resolved codes, and
+        the errors for the names that could not be resolved.
+    """
+    codes: Dict[str, Any] = {}
+    errors: Dict[str, BaseException] = {}
+    for name in timeframes:
+        code = Timeframe.get(name)
+        if code is None:
+            errors[name] = InvalidTimeframeError(f"Invalid timeframe: '{name}'")
+        else:
+            codes[name] = code
+    return codes, errors
+
+
+def validate_limit(limit: Optional[int]) -> Optional[int]:
+    """Check a per-pair row limit, which must be a positive integer or None."""
+    if limit is None:
+        return None
+    if isinstance(limit, bool) or not isinstance(limit, int):
+        raise ValueError(f"Expected an integer limit, got {type(limit).__name__}")
+    if limit < 1:
+        raise ValueError(f"Expected a limit of at least 1, got {limit}")
+    return limit
+
+
 def combine(
     results: Sequence[CandleResult],
     symbols: Sequence[str],
@@ -127,7 +185,9 @@ def combine(
 
     Returns:
         pd.DataFrame: The merged candles. ``df.attrs['errors']`` holds one
-        ``{'symbol', 'timeframe', 'error'}`` dict per failed pair.
+        ``{'symbol', 'timeframe', 'error'}`` dict per failed pair, and
+        ``df.attrs['truncated']`` one ``{'symbol', 'timeframe', 'returned',
+        'available'}`` dict per pair that hit its row limit.
 
     Raises:
         BaseException: The first pair's error, if every pair failed. This keeps
@@ -141,6 +201,16 @@ def combine(
         if r.error is not None
     ]
     succeeded = [r for r in results if r.error is None and r.frame is not None]
+    truncated: List[Dict[str, Any]] = [
+        {
+            "symbol": r.symbol,
+            "timeframe": r.timeframe,
+            "returned": len(r.frame),
+            "available": r.available,
+        }
+        for r in succeeded
+        if r.available is not None and r.available > len(r.frame)
+    ]
 
     if not succeeded:
         first_error = next((r.error for r in results if r.error is not None), None)
@@ -154,6 +224,7 @@ def combine(
     if not multi_symbol and not multi_timeframe:
         df = succeeded[0].frame.reset_index(drop=True)
         df.attrs["errors"] = errors
+        df.attrs["truncated"] = truncated
         return df
 
     symbol_rank = {name: i for i, name in enumerate(symbols)}
@@ -185,6 +256,7 @@ def combine(
     rest = [column for column in df.columns if column not in lead]
     df = df[lead + rest]
     df.attrs["errors"] = errors
+    df.attrs["truncated"] = truncated
     return df
 
 

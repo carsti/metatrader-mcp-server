@@ -6,7 +6,7 @@ Fetch the latest N candles for one or more symbols and timeframes. Great for liv
 - **connection**: The MetaTrader connection/session object.
 - **symbol_name** (`Union[str, Sequence[str]]`): A symbol (e.g., 'EURUSD') or a list of them.
 - **timeframe** (`Union[str, Sequence[str]]`): A timeframe (e.g., 'M1', 'H1', 'D1') or a list of them.
-- **count** (`int`, default=100): Number of latest candles to fetch **per (symbol, timeframe) pair**.
+- **count** (`int`, default=100): Number of latest candles to fetch **per (symbol, timeframe) pair**. The total row count is `count x symbols x timeframes`, so raise it deliberately.
 - **group** (`Optional[str]`, default='none'): Row grouping — `'timeframe'`, `'symbol'` or `'none'`. See below.
 
 ## Returns
@@ -34,13 +34,14 @@ Symbols and timeframes are ordered as you passed them, not alphabetically. Dupli
 
 ## How It Works
 1. Normalizes symbol_name and timeframe into lists. 📋
-2. For each (symbol, timeframe) pair: checks the symbol 🔎, validates the timeframe ⏰, fetches candles via the MetaTrader5 API.
-3. Failures are collected instead of raised, so one bad symbol does not sink the request.
-4. Merges everything into a single DataFrame following `group`.
+2. Validates every symbol 🔎 and timeframe ⏰ **once**, not once per pair. A symbol check is an IPC round-trip, so doing it per pair cost 50% more round-trips than necessary.
+3. Fetches each pair via the MetaTrader5 API.
+4. Failures are collected instead of raised, so one bad symbol does not sink the request.
+5. Merges everything into a single DataFrame following `group`.
 
 ## Raises
 - `SymbolNotFoundError` / `InvalidTimeframeError` / `MarketDataError`: The first pair's error, but **only if every pair failed**. Otherwise failures land in `df.attrs['errors']`.
-- `ValueError`: Empty symbol/timeframe list, or an unrecognized `group`.
+- `ValueError`: Empty symbol/timeframe list, unrecognized `group`, or non-positive `count`.
 
 ## Example Usage
 ```python

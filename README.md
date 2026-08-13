@@ -504,7 +504,7 @@ client.disconnect()
 - `get_symbol_price` - Get current bid/ask price for a symbol
 - `get_candles_latest` - Get recent price candles (OHLCV data) for one or many symbols and timeframes
 - `get_candles_by_date` - Get historical candles for a date range, for one or many symbols and timeframes
-- `get_symbol_info` - Get detailed symbol information
+- `get_symbol_info` - Get the trading specification of a symbol (sizing, precision, limits, costs)
 
 ### Order Execution
 - `place_market_order` - Execute instant BUY/SELL orders

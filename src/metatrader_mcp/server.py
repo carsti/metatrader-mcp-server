@@ -10,7 +10,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import List, Optional, Union
 
-from metatrader_mcp.utils import init, get_client, candles_to_csv
+from metatrader_mcp.utils import init, get_client, candles_to_csv, frame_to_csv
 
 # ────────────────────────────────────────────────────────────────────────────────
 # 1) Lifespan context definition
@@ -54,17 +54,18 @@ def get_account_info(ctx: Context) -> dict:
 
 @mcp.tool()
 def get_deals(ctx: Context, from_date: Optional[str] = None, to_date: Optional[str] = None, symbol: Optional[str] = None) -> str:
-	"""Get historical deals as CSV. Date input in format: 'YYYY-MM-DD'."""
+	"""Get historical deals as CSV, indexed by time. Date input in format: 'YYYY-MM-DD'. Defaults to the last 30 days."""
 	client = get_client(ctx)
 	df = client.history.get_deals_as_dataframe(from_date=from_date, to_date=to_date, group=symbol)
-	return df.to_csv() if hasattr(df, 'to_csv') else str(df)
+	# The index holds the timestamp here, so it is worth its bytes.
+	return frame_to_csv(df, index=True)
 
 @mcp.tool()
 def get_orders(ctx: Context, from_date: Optional[str] = None, to_date: Optional[str] = None, symbol: Optional[str] = None) -> str:
-	"""Get historical orders as CSV. Date input in format: 'YYYY-MM-DD'"""
+	"""Get historical orders as CSV, indexed by setup time. Date input in format: 'YYYY-MM-DD'. Defaults to the last 30 days."""
 	client = get_client(ctx)
 	df = client.history.get_orders_as_dataframe(from_date=from_date, to_date=to_date, group=symbol)
-	return df.to_csv() if hasattr(df, 'to_csv') else str(df)
+	return frame_to_csv(df, index=True)
 
 @mcp.tool()
 def get_candles_by_date(
@@ -74,21 +75,26 @@ def get_candles_by_date(
 	from_date: Optional[str] = None,
 	to_date: Optional[str] = None,
 	group: Optional[str] = None,
+	limit: int = 100,
 ) -> str:
 	"""Get candle data for one or more symbols and timeframes in a date range, as CSV.
 
 	symbol_name and timeframe each accept a single value or a list.
 	Date input in format: ISO 8601 or 'YYYY-MM-DD' or 'YYYY-MM-DD HH:MM'.
+	limit caps the candles per (symbol, timeframe) pair, most recent first
+	(default 100), so the total row count is limit x symbols x timeframes. Raise
+	it deliberately: the payload grows with every pair.
 	group ('timeframe', 'symbol' or 'none', default 'none') orders the rows and
 	only applies when both symbol_name and timeframe hold more than one value:
 	'timeframe' blocks by timeframe then symbol, 'symbol' blocks by symbol then
 	timeframe, 'none' merges everything into one stream ordered by time.
 	'symbol' and 'timeframe' columns appear only for the dimensions that vary.
-	Pairs that fail are listed in a trailing '# errors' block instead of failing
-	the whole call.
+	Pairs with more candles available than limit allowed are listed in a trailing
+	'# truncated' block, and pairs that fail in a '# errors' block instead of
+	failing the whole call.
 	"""
 	client = get_client(ctx)
-	df = client.market.get_candles_by_date(symbol_name=symbol_name, timeframe=timeframe, from_date=from_date, to_date=to_date, group=group)
+	df = client.market.get_candles_by_date(symbol_name=symbol_name, timeframe=timeframe, from_date=from_date, to_date=to_date, group=group, limit=limit)
 	return candles_to_csv(df)
 
 @mcp.tool()
@@ -122,8 +128,22 @@ def get_symbol_price(ctx: Context, symbol_name: str) -> dict:
 	return client.market.get_symbol_price(symbol_name=symbol_name)
 
 @mcp.tool()
+def get_symbol_info(ctx: Context, symbol_name: str, full: bool = False) -> dict:
+	"""Get the trading specification of a symbol: digits, point, spread, volume_min,
+	volume_max, volume_step, contract size, tick size and value, swaps and trade mode.
+
+	Check this before sizing an order - volume_min, volume_max and volume_step
+	decide whether a volume is even accepted, and digits decides price rounding.
+	Set full=True for every field the broker exposes; the payload is several
+	times larger and mostly session and margin bookkeeping.
+	"""
+	client = get_client(ctx)
+	return client.market.get_symbol_info(symbol_name=symbol_name, full=full)
+
+@mcp.tool()
 def get_all_symbols(ctx: Context) -> list:
-	"""Get a list of all available market symbols."""
+	"""Get a list of all available market symbols. Brokers commonly expose
+	thousands, so prefer get_symbols with a group pattern when you can."""
 	client = get_client(ctx)
 	return client.market.get_symbols()
 
@@ -144,42 +164,42 @@ def get_all_positions(ctx: Context) -> list:
 	"""Get all open positions."""
 	client = get_client(ctx)
 	df = client.order.get_all_positions()
-	return df.to_csv() if hasattr(df, 'to_csv') else str(df)
+	return frame_to_csv(df)
 
 @mcp.tool()
 def get_positions_by_symbol(ctx: Context, symbol: str) -> list:
 	"""Get open positions for a specific symbol."""
 	client = get_client(ctx)
 	df = client.order.get_positions_by_symbol(symbol=symbol)
-	return df.to_csv() if hasattr(df, 'to_csv') else str(df)
+	return frame_to_csv(df)
 
 @mcp.tool()
 def get_positions_by_id(ctx: Context, id: Union[int, str]) -> list:
 	"""Get open positions by ID."""
 	client = get_client(ctx)
 	df = client.order.get_positions_by_id(id=id)
-	return df.to_csv() if hasattr(df, 'to_csv') else str(df)
+	return frame_to_csv(df)
 
 @mcp.tool()
 def get_all_pending_orders(ctx: Context) -> list:
 	"""Get all pending orders."""
 	client = get_client(ctx)
 	df = client.order.get_all_pending_orders()
-	return df.to_csv() if hasattr(df, 'to_csv') else str(df)
+	return frame_to_csv(df)
 
 @mcp.tool()
 def get_pending_orders_by_symbol(ctx: Context, symbol: str) -> list:
 	"""Get pending orders for a specific symbol."""
 	client = get_client(ctx)
 	df = client.order.get_pending_orders_by_symbol(symbol=symbol)
-	return df.to_csv() if hasattr(df, 'to_csv') else str(df)
+	return frame_to_csv(df)
 
 @mcp.tool()
 def get_pending_orders_by_id(ctx: Context, id: Union[int, str]) -> list:
 	"""Get pending orders by id."""
 	client = get_client(ctx)
 	df = client.order.get_pending_orders_by_id(id=id)
-	return df.to_csv() if hasattr(df, 'to_csv') else str(df)
+	return frame_to_csv(df)
 
 @mcp.tool()
 def place_market_order(ctx: Context, symbol: str, volume: float, type: str) -> dict:

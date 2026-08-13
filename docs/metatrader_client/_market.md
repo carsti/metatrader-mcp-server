@@ -46,11 +46,11 @@ if conn.connect():
 - [`get_symbols`](market/get_symbols.md) — Get a list of all available market symbols. 🗂️
 
 
-- **get_symbols(group=None)**: List all available symbols, optionally filtered by group.
-- **get_symbol_info(symbol_name)**: Get detailed information for a given symbol.
+- **get_symbols(group=None, use_cache=True)**: List all available symbols, optionally filtered by group. Cached per group for 60s and cleared on connect/disconnect.
+- **get_symbol_info(symbol_name, full=False)**: Get the trading specification for a symbol — sizing, precision, limits and costs. `full=True` returns every field the broker exposes.
 - **get_symbol_price(symbol_name)**: Get the latest price data for a symbol.
-- **get_candles_latest(symbol_name, timeframe, count=100, group=None)**: Get the most recent candle data as a pandas DataFrame. `symbol_name` and `timeframe` each accept a single value or a list; `group` (`'timeframe'`, `'symbol'` or `'none'`) orders the rows when both hold more than one value.
-- **get_candles_by_date(symbol_name, timeframe, from_date=None, to_date=None, group=None)**: Get candle data for a specific date range as a pandas DataFrame. Same multi-value and `group` support as above.
+- **get_candles_latest(symbol_name, timeframe, count=100, group=None)**: Get the most recent candle data as a pandas DataFrame. `symbol_name` and `timeframe` each accept a single value or a list; `group` (`'timeframe'`, `'symbol'` or `'none'`) orders the rows when both hold more than one value. `count` applies per pair.
+- **get_candles_by_date(symbol_name, timeframe, from_date=None, to_date=None, group=None, limit=100)**: Get candle data for a specific date range as a pandas DataFrame. Same multi-value and `group` support as above. `limit` caps the rows per pair, most recent first, and trimmed pairs are reported in `df.attrs['truncated']`.
 
 ---
 

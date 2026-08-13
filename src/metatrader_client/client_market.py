@@ -40,8 +40,8 @@ class MT5Market:
     def get_symbols(self, group: Optional[str] = None) -> List[str]:
         return get_symbols(self._connection, group)
 
-    def get_symbol_info(self, symbol_name: str) -> Dict[str, Any]:
-        return get_symbol_info(self._connection, symbol_name)
+    def get_symbol_info(self, symbol_name: str, full: bool = False) -> Dict[str, Any]:
+        return get_symbol_info(self._connection, symbol_name, full)
     
     def get_symbol_price(self, symbol_name: str) -> Dict[str, Any]:
         return get_symbol_price(self._connection, symbol_name)
@@ -62,5 +62,6 @@ class MT5Market:
         from_date: Optional[str] = None,
         to_date: Optional[str] = None,
         group: Optional[str] = None,
+        limit: int = 100,
     ) -> pd.DataFrame:
-        return get_candles_by_date(self._connection, symbol_name, timeframe, from_date, to_date, group)
+        return get_candles_by_date(self._connection, symbol_name, timeframe, from_date, to_date, group, limit)

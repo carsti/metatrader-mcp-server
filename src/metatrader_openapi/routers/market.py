@@ -25,11 +25,17 @@ def candles_payload(df) -> Dict[str, Any]:
 
     Response:
         Dict[str, Any]: {'data': list of candle records, 'errors': list of
-        {'symbol', 'timeframe', 'error'} for the pairs that failed}.
+        {'symbol', 'timeframe', 'error'} for the pairs that failed, 'truncated':
+        list of {'symbol', 'timeframe', 'returned', 'available'} for the pairs
+        that had more candles than the limit allowed}.
     """
-    errors = list(getattr(df, "attrs", {}).get("errors") or [])
+    attrs = getattr(df, "attrs", {})
     data = [] if df is None or df.empty else df.to_dict(orient="records")
-    return {"data": data, "errors": errors}
+    return {
+        "data": data,
+        "errors": list(attrs.get("errors") or []),
+        "truncated": list(attrs.get("truncated") or []),
+    }
 
 
 @router.get("/candles/latest", response_model=Dict[str, Any])
@@ -77,6 +83,7 @@ async def get_candles_by_date_endpoint( # Choose a descriptive name
     date_from: datetime = Query(..., description="Start date and time (ISO 8601 format, e.g., 2023-01-01T00:00:00)"),
     date_to: datetime = Query(..., description="End date and time (ISO 8601 format, e.g., 2023-01-02T23:59:59)"),
     group: Optional[str] = Query(None, description=GROUP_DESCRIPTION),
+    limit: int = Query(100, ge=1, description="Maximum candles per symbol/timeframe pair, most recent first"),
 ):
     """Fetch candles for one or more symbols and timeframes over a date range.
 
@@ -100,6 +107,7 @@ async def get_candles_by_date_endpoint( # Choose a descriptive name
             from_date=date_from,
             to_date=date_to,
             group=group,
+            limit=limit,
         )
         return candles_payload(df)
     except MT5ConnectionError as e:
@@ -114,7 +122,8 @@ async def get_candles_by_date_endpoint( # Choose a descriptive name
 @router.get("/symbol/info/{symbol_name}", response_model=Dict[str, Any])
 async def get_symbol_info_endpoint( # Choose a descriptive name like get_symbol_info_route or symbol_info
     request: Request,
-    symbol_name: str # Path parameter
+    symbol_name: str, # Path parameter
+    full: bool = Query(False, description="Return every field the broker exposes instead of the trading subset"),
 ):
     """Get detailed information for a specific symbol.
 
@@ -133,7 +142,7 @@ async def get_symbol_info_endpoint( # Choose a descriptive name like get_symbol_
         # It might have a ._asdict() method or similar, or you might need to
         # manually convert its fields to a dictionary if it's a custom class.
         # For now, assume it returns a dict or a Pydantic model that FastAPI can handle.
-        info = client.market.get_symbol_info(symbol_name=symbol_name)
+        info = client.market.get_symbol_info(symbol_name=symbol_name, full=full)
         if info is None: # Or however the client function indicates "not found"
             raise HTTPException(status_code=404, detail=f"Symbol {symbol_name} not found or no info available.")
         # If 'info' is an object with attributes, convert to dict:

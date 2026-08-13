@@ -1,10 +1,16 @@
 from typing import List, Optional, Sequence, Union
 import pandas as pd
 import MetaTrader5 as mt5
-from ..types import Timeframe
-from ..exceptions import SymbolNotFoundError, InvalidTimeframeError, MarketDataError
-from .get_symbols import get_symbols
-from ._candles_common import CandleResult, combine, normalize_list, validate_group
+from ..exceptions import MarketDataError
+from ._candles_common import (
+    CandleResult,
+    combine,
+    normalize_list,
+    validate_group,
+    validate_limit,
+    validate_symbols,
+    validate_timeframes,
+)
 
 
 def get_candles_latest(
@@ -20,7 +26,8 @@ def get_candles_latest(
         connection: MT5 connection object
         symbol_name: Symbol, or list of symbols (e.g. 'EURUSD' or ['EURUSD', 'GBPUSD'])
         timeframe: Timeframe, or list of timeframes (e.g. 'H1' or ['H1', 'M15'])
-        count: Number of candles per (symbol, timeframe) pair (default: 100)
+        count: Number of candles per (symbol, timeframe) pair (default: 100).
+            The total row count is count x symbols x timeframes.
         group: Row grouping when both lists have more than one entry -
             'timeframe', 'symbol' or 'none' (default: 'none')
 
@@ -30,33 +37,38 @@ def get_candles_latest(
         pairs that failed.
 
     Raises:
+        ValueError: Empty symbol/timeframe list, bad group, or non-positive count.
         Any per-pair error, if every pair failed.
     """
     symbols = normalize_list(symbol_name)
     timeframes = normalize_list(timeframe)
     group = validate_group(group)
+    count = validate_limit(count)
+
+    # Resolved once each, rather than once per pair: a symbol lookup is an IPC
+    # round-trip that marshals full symbol structs.
+    symbol_errors = validate_symbols(connection, symbols)
+    timeframe_codes, timeframe_errors = validate_timeframes(timeframes)
 
     results: List[CandleResult] = []
     for symbol in symbols:
         for tf_name in timeframes:
+            known_error = symbol_errors.get(symbol) or timeframe_errors.get(tf_name)
+            if known_error is not None:
+                results.append(CandleResult(symbol, tf_name, None, known_error))
+                continue
             try:
-                results.append(
-                    CandleResult(symbol, tf_name, _fetch_one(connection, symbol, tf_name, count), None)
-                )
+                frame = _fetch_one(symbol, tf_name, timeframe_codes[tf_name], count)
+                results.append(CandleResult(symbol, tf_name, frame, None))
             except Exception as error:  # collected, then re-raised if nothing succeeds
                 results.append(CandleResult(symbol, tf_name, None, error))
 
     return combine(results, symbols, timeframes, group)
 
 
-def _fetch_one(connection, symbol_name: str, timeframe: str, count: int) -> pd.DataFrame:
+def _fetch_one(symbol_name: str, timeframe: str, tf_code, count: int) -> pd.DataFrame:
     """Fetch the latest `count` candles for a single symbol and timeframe."""
-    if not get_symbols(connection, symbol_name):
-        raise SymbolNotFoundError(f"Symbol '{symbol_name}' not found")
-    tf = Timeframe.get(timeframe)
-    if tf is None:
-        raise InvalidTimeframeError(f"Invalid timeframe: '{timeframe}'")
-    candles = mt5.copy_rates_from_pos(symbol_name, tf, 0, count)
+    candles = mt5.copy_rates_from_pos(symbol_name, tf_code, 0, count)
     if candles is None or len(candles) == 0:
         raise MarketDataError(f"Failed to retrieve candle data for symbol '{symbol_name}' with timeframe '{timeframe}'")
     df = pd.DataFrame(candles)
