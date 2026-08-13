@@ -8,9 +8,9 @@ from mcp.server.fastmcp import FastMCP, Context
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import Optional, Union
+from typing import List, Optional, Union
 
-from metatrader_mcp.utils import init, get_client
+from metatrader_mcp.utils import init, get_client, candles_to_csv
 
 # ────────────────────────────────────────────────────────────────────────────────
 # 1) Lifespan context definition
@@ -66,18 +66,54 @@ def get_orders(ctx: Context, from_date: Optional[str] = None, to_date: Optional[
 	df = client.history.get_orders_as_dataframe(from_date=from_date, to_date=to_date, group=symbol)
 	return df.to_csv() if hasattr(df, 'to_csv') else str(df)
 
-def get_candles_by_date(ctx: Context, symbol_name: str, timeframe: str, from_date: str = None, to_date: str = None) -> str:
-	"""Get candle data for a symbol in a given timeframe and date range as CSV. Date input in format: ISO 8601 or 'YYYY-MM-DD' or 'YYYY-MM-DD HH:MM'."""
+@mcp.tool()
+def get_candles_by_date(
+	ctx: Context,
+	symbol_name: Union[str, List[str]],
+	timeframe: Union[str, List[str]],
+	from_date: Optional[str] = None,
+	to_date: Optional[str] = None,
+	group: Optional[str] = None,
+) -> str:
+	"""Get candle data for one or more symbols and timeframes in a date range, as CSV.
+
+	symbol_name and timeframe each accept a single value or a list.
+	Date input in format: ISO 8601 or 'YYYY-MM-DD' or 'YYYY-MM-DD HH:MM'.
+	group ('timeframe', 'symbol' or 'none', default 'none') orders the rows and
+	only applies when both symbol_name and timeframe hold more than one value:
+	'timeframe' blocks by timeframe then symbol, 'symbol' blocks by symbol then
+	timeframe, 'none' merges everything into one stream ordered by time.
+	'symbol' and 'timeframe' columns appear only for the dimensions that vary.
+	Pairs that fail are listed in a trailing '# errors' block instead of failing
+	the whole call.
+	"""
 	client = get_client(ctx)
-	df = client.market.get_candles_by_date(symbol_name=symbol_name, timeframe=timeframe, from_date=from_date, to_date=to_date)
-	return df.to_csv() if hasattr(df, 'to_csv') else str(df)
+	df = client.market.get_candles_by_date(symbol_name=symbol_name, timeframe=timeframe, from_date=from_date, to_date=to_date, group=group)
+	return candles_to_csv(df)
 
 @mcp.tool()
-def get_candles_latest(ctx: Context, symbol_name: str, timeframe: str, count: int = 100) -> str:
-	"""Get the latest N candles for a symbol and timeframe as CSV."""
+def get_candles_latest(
+	ctx: Context,
+	symbol_name: Union[str, List[str]],
+	timeframe: Union[str, List[str]],
+	count: int = 100,
+	group: Optional[str] = None,
+) -> str:
+	"""Get the latest N candles for one or more symbols and timeframes, as CSV.
+
+	symbol_name and timeframe each accept a single value or a list; count applies
+	per (symbol, timeframe) pair.
+	group ('timeframe', 'symbol' or 'none', default 'none') orders the rows and
+	only applies when both symbol_name and timeframe hold more than one value:
+	'timeframe' blocks by timeframe then symbol, 'symbol' blocks by symbol then
+	timeframe, 'none' merges everything into one stream ordered by time.
+	'symbol' and 'timeframe' columns appear only for the dimensions that vary.
+	Pairs that fail are listed in a trailing '# errors' block instead of failing
+	the whole call.
+	"""
 	client = get_client(ctx)
-	df = client.market.get_candles_latest(symbol_name=symbol_name, timeframe=timeframe, count=count)
-	return df.to_csv() if hasattr(df, 'to_csv') else str(df)
+	df = client.market.get_candles_latest(symbol_name=symbol_name, timeframe=timeframe, count=count, group=group)
+	return candles_to_csv(df)
 
 @mcp.tool()
 def get_symbol_price(ctx: Context, symbol_name: str) -> dict:

@@ -1,55 +1,96 @@
 from fastapi import APIRouter, HTTPException, Request, Query
 from typing import List, Dict, Any, Optional
-from datetime import datetime # Ensure datetime is imported
+from datetime import datetime
 # Removed unused import of pandas (pd)
 from metatrader_client.exceptions import ConnectionError as MT5ConnectionError
 
 router = APIRouter()
 
-@router.get("/candles/latest", response_model=List[Dict[str, Any]])
-async def candles_latest(
-    request: Request,
-    symbol_name: str = Query(..., description="Symbol name, e.g., 'EURUSD'"),
-    timeframe: str = Query(..., description="Timeframe, e.g., 'M1', 'H1'"),
-    count: int = Query(100, description="Number of candles to retrieve")
-):
-    """Fetch the latest N candles for a given symbol and timeframe.
+GROUP_DESCRIPTION = (
+    "Row grouping, applied only when both symbol_name and timeframe have more "
+    "than one value: 'timeframe' blocks by timeframe then symbol, 'symbol' "
+    "blocks by symbol then timeframe, 'none' (default) merges everything into a "
+    "single stream ordered by time."
+)
+
+
+def candles_payload(df) -> Dict[str, Any]:
+    """Shape a candle DataFrame into the endpoint response.
+
+    Pairs that could not be retrieved are reported alongside the data rather
+    than failing the whole request.
 
     Input:
-        symbol_name (str): The symbol, e.g., 'EURUSD'.
-        timeframe (str): Timeframe string, e.g., 'M1', 'H1'.
-        count (int): Number of candles to retrieve (default=100).
+        df: DataFrame returned by a candle client operation, or None.
 
     Response:
-        List[Dict[str, Any]]: List of candle records with keys 'time', 'open', 'high', 'low', 'close', 'volume'.
+        Dict[str, Any]: {'data': list of candle records, 'errors': list of
+        {'symbol', 'timeframe', 'error'} for the pairs that failed}.
+    """
+    errors = list(getattr(df, "attrs", {}).get("errors") or [])
+    data = [] if df is None or df.empty else df.to_dict(orient="records")
+    return {"data": data, "errors": errors}
+
+
+@router.get("/candles/latest", response_model=Dict[str, Any])
+async def candles_latest(
+    request: Request,
+    symbol_name: List[str] = Query(..., description="Symbol name, repeatable, e.g., 'EURUSD'"),
+    timeframe: List[str] = Query(..., description="Timeframe, repeatable, e.g., 'M1', 'H1'"),
+    count: int = Query(100, description="Number of candles to retrieve per symbol/timeframe pair"),
+    group: Optional[str] = Query(None, description=GROUP_DESCRIPTION),
+):
+    """Fetch the latest N candles for one or more symbols and timeframes.
+
+    Input:
+        symbol_name (List[str]): One or more symbols, e.g., 'EURUSD'.
+        timeframe (List[str]): One or more timeframes, e.g., 'M1', 'H1'.
+        count (int): Number of candles per pair (default=100).
+        group (Optional[str]): 'timeframe', 'symbol' or 'none' (default='none').
+
+    Response:
+        Dict[str, Any]: {'data': candle records with keys 'time', 'open', 'high',
+        'low', 'close', 'volume' plus 'symbol'/'timeframe' for the dimensions
+        that vary; 'errors': the pairs that could not be retrieved}.
     """
     client = request.app.state.client
     try:
-        df = client.market.get_candles_latest(symbol_name=symbol_name, timeframe=timeframe, count=count)
-        return df.to_dict(orient="records")
+        df = client.market.get_candles_latest(
+            symbol_name=symbol_name,
+            timeframe=timeframe,
+            count=count,
+            group=group,
+        )
+        return candles_payload(df)
     except MT5ConnectionError as e:
         raise HTTPException(status_code=503, detail=str(e))
+    except ValueError as e:  # invalid group, empty symbol list, bad timeframe
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/candles/date", response_model=List[Dict[str, Any]])
+@router.get("/candles/date", response_model=Dict[str, Any])
 async def get_candles_by_date_endpoint( # Choose a descriptive name
     request: Request,
-    symbol_name: str = Query(..., description="Symbol name, e.g., 'EURUSD'"),
-    timeframe: str = Query(..., description="Timeframe, e.g., 'M1', 'H1'"),
+    symbol_name: List[str] = Query(..., description="Symbol name, repeatable, e.g., 'EURUSD'"),
+    timeframe: List[str] = Query(..., description="Timeframe, repeatable, e.g., 'M1', 'H1'"),
     date_from: datetime = Query(..., description="Start date and time (ISO 8601 format, e.g., 2023-01-01T00:00:00)"),
-    date_to: datetime = Query(..., description="End date and time (ISO 8601 format, e.g., 2023-01-02T23:59:59)")
+    date_to: datetime = Query(..., description="End date and time (ISO 8601 format, e.g., 2023-01-02T23:59:59)"),
+    group: Optional[str] = Query(None, description=GROUP_DESCRIPTION),
 ):
-    """Fetch candles for a given symbol, timeframe, and date range.
+    """Fetch candles for one or more symbols and timeframes over a date range.
 
     Input:
-        symbol_name (str): The symbol, e.g., 'EURUSD'.
-        timeframe (str): Timeframe string, e.g., 'M1', 'H1'.
+        symbol_name (List[str]): One or more symbols, e.g., 'EURUSD'.
+        timeframe (List[str]): One or more timeframes, e.g., 'M1', 'H1'.
         date_from (datetime): Start date and time for candles.
         date_to (datetime): End date and time for candles.
+        group (Optional[str]): 'timeframe', 'symbol' or 'none' (default='none').
 
     Response:
-        List[Dict[str, Any]]: List of candle records with keys 'time', 'open', 'high', 'low', 'close', 'volume'.
+        Dict[str, Any]: {'data': candle records with keys 'time', 'open', 'high',
+        'low', 'close', 'volume' plus 'symbol'/'timeframe' for the dimensions
+        that vary; 'errors': the pairs that could not be retrieved}.
     """
     client = request.app.state.client
     try:
@@ -57,12 +98,10 @@ async def get_candles_by_date_endpoint( # Choose a descriptive name
             symbol_name=symbol_name,
             timeframe=timeframe,
             from_date=date_from,
-            to_date=date_to
+            to_date=date_to,
+            group=group,
         )
-        if df is None or df.empty:
-            # Return empty list if no data, or handle as appropriate
-            return []
-        return df.to_dict(orient="records")
+        return candles_payload(df)
     except MT5ConnectionError as e:
         raise HTTPException(status_code=503, detail=str(e))
     except ValueError as e: # Catch potential ValueError from date parsing or client logic
@@ -103,6 +142,9 @@ async def get_symbol_info_endpoint( # Choose a descriptive name like get_symbol_
         # If it's a simple class, you might need: info = info.__dict__ or vars(info)
         # For now, let's assume it's directly returnable or a Pydantic model.
         return info
+    except HTTPException:
+        # Do not let the catch-all below rewrite the 404 above into a 500.
+        raise
     except MT5ConnectionError as e:
         raise HTTPException(status_code=503, detail=str(e))
     # Specific exception for symbol not found if your client raises one

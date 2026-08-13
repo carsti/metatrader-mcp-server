@@ -25,9 +25,20 @@ This is **financial software**. Every trade action involves real money. Be preci
 | Tool | Parameters | Returns |
 |------|-----------|---------|
 | `get_symbol_price` | `symbol_name: str` | dict: bid, ask, last, volume, time |
-| `get_candles_latest` | `symbol_name: str`, `timeframe: str`, `count: int = 100` | CSV: time, open, high, low, close, tick_volume, spread, real_volume |
+| `get_candles_latest` | `symbol_name: str \| list`, `timeframe: str \| list`, `count: int = 100`, `group: str = None` | CSV: time, open, high, low, close, tick_volume, spread, real_volume |
+| `get_candles_by_date` | `symbol_name: str \| list`, `timeframe: str \| list`, `from_date: str`, `to_date: str`, `group: str = None` | same CSV columns, for the given date range |
 | `get_all_symbols` | (none) | list of all symbol names |
 | `get_symbols` | `group: str` (e.g., `*USD*`) | list of filtered symbol names |
+
+Both candle tools take one value or a list for `symbol_name` and `timeframe`, and fetch every combination in a single call. A `symbol` and/or `timeframe` column is prepended only for the dimension that varies — one symbol on one timeframe returns the plain candle columns.
+
+`group` orders the rows and only applies when **both** lists hold more than one value:
+
+- `timeframe` — blocked by timeframe, then symbol, then time descending
+- `symbol` — blocked by symbol, then timeframe, then time descending
+- `none` (default) — one stream ordered by time descending, no blocks
+
+A pair that cannot be fetched does not fail the call: it is listed in a trailing `# errors` CSV block after a blank line. The call only raises if every pair failed.
 
 ### Open Positions
 

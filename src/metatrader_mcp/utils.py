@@ -1,6 +1,37 @@
 import os
 from typing import Any, Optional, Union
+
+import pandas as pd
+
 from metatrader_client import client
+
+
+def candles_to_csv(df: Any) -> str:
+	"""Render a candle DataFrame as CSV, appending any partial-failure report.
+
+	The candle fetchers return what they could retrieve and record the pairs
+	they could not in ``df.attrs['errors']``. Those are appended after the data
+	as a second, clearly marked CSV block so a single string carries both.
+
+	Args:
+		df: DataFrame returned by a candle operation (anything else is stringified).
+
+	Returns:
+		str: The candles as CSV without the index, optionally followed by a
+		blank line, a '# errors' marker and one row per failed pair.
+	"""
+	if not isinstance(df, pd.DataFrame):
+		return str(df)
+
+	# lineterminator is pinned so the payload does not become CRLF on Windows.
+	csv = df.to_csv(index=False, lineterminator="\n")
+	errors = df.attrs.get("errors") or []
+	if not errors:
+		return csv
+
+	report = pd.DataFrame(errors, columns=["symbol", "timeframe", "error"])
+	report_csv = report.to_csv(index=False, lineterminator="\n")
+	return f"{csv}\n# errors\n{report_csv}"
 
 
 def resolve_transport_config(transport=None, host=None, port=None):

@@ -38,7 +38,8 @@ dependencies = [
   "uvicorn[standard]>=0.34.1",
   "pydantic>=2.11.3",
   "pydantic-settings>=2.8.1",
-  "mcp[cli]>=1.6.0",
+  # mcp 2.0 removed mcp.server.fastmcp, which metatrader_mcp.server imports.
+  "mcp[cli]>=1.6.0,<2",
   "click>=8.0.0",
   "pytz",
   "websockets>=13.0",

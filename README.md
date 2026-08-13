@@ -502,8 +502,8 @@ client.disconnect()
 ### Market Data
 - `get_symbols` - List all available trading symbols
 - `get_symbol_price` - Get current bid/ask price for a symbol
-- `get_candles_latest` - Get recent price candles (OHLCV data)
-- `get_candles_by_date` - Get historical candles for a date range
+- `get_candles_latest` - Get recent price candles (OHLCV data) for one or many symbols and timeframes
+- `get_candles_by_date` - Get historical candles for a date range, for one or many symbols and timeframes
 - `get_symbol_info` - Get detailed symbol information
 
 ### Order Execution

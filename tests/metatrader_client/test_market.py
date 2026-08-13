@@ -110,3 +110,103 @@ def test_get_candles_invalid_symbol(mt5_market):
 def test_get_candles_invalid_timeframe(mt5_market):
     with pytest.raises(Exception):
         mt5_market.get_candles_latest(TEST_SYMBOL, "INVALID_TF", count=5)
+
+# --- Multi-symbol / multi-timeframe ---
+TEST_SYMBOL_2 = os.getenv("TEST_SYMBOL_2", "GBPUSD")
+TEST_TIMEFRAME_2 = os.getenv("TEST_TIMEFRAME_2", "M15")
+
+def test_get_candles_single_pair_has_no_identifier_columns(mt5_market):
+    """A single symbol and timeframe must keep the pre-existing shape."""
+    candles = mt5_market.get_candles_latest([TEST_SYMBOL], [TEST_TIMEFRAME], count=5)
+    assert "symbol" not in candles.columns
+    assert "timeframe" not in candles.columns
+    assert len(candles) == 5
+
+def test_get_candles_many_timeframes_adds_timeframe_column(mt5_market):
+    candles = mt5_market.get_candles_latest(
+        TEST_SYMBOL, [TEST_TIMEFRAME, TEST_TIMEFRAME_2], count=5
+    )
+    assert list(candles.columns)[0] == "timeframe"
+    assert "symbol" not in candles.columns
+    assert list(candles["timeframe"].unique()) == [TEST_TIMEFRAME, TEST_TIMEFRAME_2]
+    assert len(candles) == 10
+
+def test_get_candles_many_symbols_adds_symbol_column(mt5_market):
+    candles = mt5_market.get_candles_latest(
+        [TEST_SYMBOL, TEST_SYMBOL_2], TEST_TIMEFRAME, count=5
+    )
+    assert list(candles.columns)[0] == "symbol"
+    assert "timeframe" not in candles.columns
+    assert list(candles["symbol"].unique()) == [TEST_SYMBOL, TEST_SYMBOL_2]
+
+def test_get_candles_group_timeframe(mt5_market):
+    candles = mt5_market.get_candles_latest(
+        [TEST_SYMBOL, TEST_SYMBOL_2],
+        [TEST_TIMEFRAME, TEST_TIMEFRAME_2],
+        count=5,
+        group="timeframe",
+    )
+    assert list(candles.columns)[:2] == ["timeframe", "symbol"]
+    blocks = candles[["timeframe", "symbol"]].drop_duplicates().values.tolist()
+    assert blocks == [
+        [TEST_TIMEFRAME, TEST_SYMBOL],
+        [TEST_TIMEFRAME, TEST_SYMBOL_2],
+        [TEST_TIMEFRAME_2, TEST_SYMBOL],
+        [TEST_TIMEFRAME_2, TEST_SYMBOL_2],
+    ]
+
+def test_get_candles_group_symbol(mt5_market):
+    candles = mt5_market.get_candles_latest(
+        [TEST_SYMBOL, TEST_SYMBOL_2],
+        [TEST_TIMEFRAME, TEST_TIMEFRAME_2],
+        count=5,
+        group="symbol",
+    )
+    assert list(candles.columns)[:2] == ["symbol", "timeframe"]
+    blocks = candles[["symbol", "timeframe"]].drop_duplicates().values.tolist()
+    assert blocks == [
+        [TEST_SYMBOL, TEST_TIMEFRAME],
+        [TEST_SYMBOL, TEST_TIMEFRAME_2],
+        [TEST_SYMBOL_2, TEST_TIMEFRAME],
+        [TEST_SYMBOL_2, TEST_TIMEFRAME_2],
+    ]
+
+def test_get_candles_group_none_is_chronological(mt5_market):
+    candles = mt5_market.get_candles_latest(
+        [TEST_SYMBOL, TEST_SYMBOL_2],
+        [TEST_TIMEFRAME, TEST_TIMEFRAME_2],
+        count=5,
+        group="none",
+    )
+    assert list(candles.columns)[:2] == ["symbol", "timeframe"]
+    assert candles["time"].is_monotonic_decreasing
+
+def test_get_candles_invalid_group(mt5_market):
+    with pytest.raises(ValueError):
+        mt5_market.get_candles_latest(TEST_SYMBOL, TEST_TIMEFRAME, count=5, group="ticker")
+
+def test_get_candles_partial_failure_is_reported_not_raised(mt5_market):
+    candles = mt5_market.get_candles_latest(
+        [TEST_SYMBOL, "INVALID_SYMBOL"], TEST_TIMEFRAME, count=5
+    )
+    assert list(candles["symbol"].unique()) == [TEST_SYMBOL]
+    assert [e["symbol"] for e in candles.attrs["errors"]] == ["INVALID_SYMBOL"]
+
+def test_get_candles_all_pairs_failing_still_raises(mt5_market):
+    with pytest.raises(Exception):
+        mt5_market.get_candles_latest(["INVALID_A", "INVALID_B"], TEST_TIMEFRAME, count=5)
+
+def test_get_candles_by_date_many_symbols(mt5_market):
+    from datetime import datetime, timedelta
+    to_date = datetime.now().strftime("%Y-%m-%d")
+    from_date = (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%d")
+    candles = mt5_market.get_candles_by_date(
+        [TEST_SYMBOL, TEST_SYMBOL_2],
+        [TEST_TIMEFRAME, TEST_TIMEFRAME_2],
+        from_date,
+        to_date,
+        group="symbol",
+    )
+    assert isinstance(candles, pd.DataFrame)
+    assert not candles.empty
+    assert list(candles.columns)[:2] == ["symbol", "timeframe"]

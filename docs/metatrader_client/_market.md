@@ -39,8 +39,8 @@ if conn.connect():
 
 ## Main Methods 🧩
 
-- [`get_candles_by_date`](market/get_candles_by_date.md) — Fetch historical candle data between two dates. 🕰️
-- [`get_candles_latest`](market/get_candles_latest.md) — Get the latest N candles for a symbol and timeframe. 🔥
+- [`get_candles_by_date`](market/get_candles_by_date.md) — Fetch historical candle data between two dates, for one or many symbols and timeframes. 🕰️
+- [`get_candles_latest`](market/get_candles_latest.md) — Get the latest N candles for one or many symbols and timeframes. 🔥
 - [`get_symbol_info`](market/get_symbol_info.md) — Retrieve all available information about a trading symbol. 🏷️
 - [`get_symbol_price`](market/get_symbol_price.md) — Get the latest price and tick data for a symbol. 💸
 - [`get_symbols`](market/get_symbols.md) — Get a list of all available market symbols. 🗂️
@@ -49,8 +49,8 @@ if conn.connect():
 - **get_symbols(group=None)**: List all available symbols, optionally filtered by group.
 - **get_symbol_info(symbol_name)**: Get detailed information for a given symbol.
 - **get_symbol_price(symbol_name)**: Get the latest price data for a symbol.
-- **get_candles_latest(symbol_name, timeframe, count=100)**: Get the most recent candle data as a pandas DataFrame.
-- **get_candles_by_date(symbol_name, timeframe, from_date=None, to_date=None)**: Get candle data for a specific date range as a pandas DataFrame.
+- **get_candles_latest(symbol_name, timeframe, count=100, group=None)**: Get the most recent candle data as a pandas DataFrame. `symbol_name` and `timeframe` each accept a single value or a list; `group` (`'timeframe'`, `'symbol'` or `'none'`) orders the rows when both hold more than one value.
+- **get_candles_by_date(symbol_name, timeframe, from_date=None, to_date=None, group=None)**: Get candle data for a specific date range as a pandas DataFrame. Same multi-value and `group` support as above.
 
 ---
 
