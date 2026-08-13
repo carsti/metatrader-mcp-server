@@ -13,6 +13,7 @@ import pandas as pd
 
 from ..exceptions import InvalidTimeframeError, MarketDataError, SymbolNotFoundError
 from ..types import Timeframe
+from ..utils import validate_limit  # re-exported: the candle fetchers import it from here
 from .get_symbols import get_symbols
 
 GROUP_TIMEFRAME = "timeframe"
@@ -144,17 +145,6 @@ def validate_timeframes(
         else:
             codes[name] = code
     return codes, errors
-
-
-def validate_limit(limit: Optional[int]) -> Optional[int]:
-    """Check a per-pair row limit, which must be a positive integer or None."""
-    if limit is None:
-        return None
-    if isinstance(limit, bool) or not isinstance(limit, int):
-        raise ValueError(f"Expected an integer limit, got {type(limit).__name__}")
-    if limit < 1:
-        raise ValueError(f"Expected a limit of at least 1, got {limit}")
-    return limit
 
 
 def combine(

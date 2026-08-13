@@ -29,7 +29,7 @@ def frame_to_csv(df: Any, index: bool = False) -> str:
 	"""
 	if not isinstance(df, pd.DataFrame):
 		return str(df)
-	return df.to_csv(index=index, lineterminator="\n")
+	return _with_reports(df.to_csv(index=index, lineterminator="\n"), df)
 
 
 def candles_to_csv(df: Any) -> str:
@@ -51,12 +51,8 @@ def candles_to_csv(df: Any) -> str:
 	if not isinstance(df, pd.DataFrame):
 		return str(df)
 
-	blocks = [frame_to_csv(_compact(df))]
-	blocks.extend(
-		_report(df.attrs.get("truncated"), "truncated", ["symbol", "timeframe", "returned", "available"])
-	)
-	blocks.extend(_report(df.attrs.get("errors"), "errors", ["symbol", "timeframe", "error"]))
-	return "\n".join(blocks)
+	compact = _compact(df)
+	return _with_reports(compact.to_csv(index=False, lineterminator="\n"), df)
 
 
 def _compact(df: "pd.DataFrame") -> "pd.DataFrame":
@@ -77,12 +73,25 @@ def _compact(df: "pd.DataFrame") -> "pd.DataFrame":
 	return view.drop(columns=empty) if empty else view
 
 
-def _report(rows: Any, name: str, columns: list) -> list:
+def _with_reports(csv: str, df: "pd.DataFrame") -> str:
+	"""Append the trailing report blocks a frame carries in its attrs.
+
+	Operations return what they could retrieve and record the rest in
+	``df.attrs``: rows dropped to a limit under 'truncated', pairs that failed
+	under 'errors'. Each becomes its own marked CSV block after a blank line, so
+	one string carries the data and everything the caller should know about it.
+	"""
+	blocks = [csv]
+	blocks.extend(_report(df.attrs.get("truncated"), "truncated"))
+	blocks.extend(_report(df.attrs.get("errors"), "errors"))
+	return "\n".join(blocks)
+
+
+def _report(rows: Any, name: str) -> list:
 	"""Render a trailing '# <name>' CSV block, or nothing when there is no data."""
 	if not rows:
 		return []
-	report = pd.DataFrame(rows, columns=columns)
-	report_csv = report.to_csv(index=False, lineterminator="\n")
+	report_csv = pd.DataFrame(rows).to_csv(index=False, lineterminator="\n")
 	return [f"# {name}\n{report_csv}"]
 
 

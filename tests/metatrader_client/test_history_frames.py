@@ -117,3 +117,59 @@ def test_orders_still_parse_the_timestamps(orders):
 def test_orders_empty_history_is_an_empty_frame(monkeypatch):
     monkeypatch.setattr(orders_module, "get_orders", lambda *a, **k: [])
     assert get_orders_as_dataframe(None).empty
+
+
+# --- row limits -------------------------------------------------------------
+
+@pytest.fixture
+def many_deals(monkeypatch):
+    rows = [dict(RAW_DEAL, ticket=987654321 + i, time=EPOCH + i * 60) for i in range(50)]
+    monkeypatch.setattr(deals_module, "get_deals", lambda *a, **k: rows)
+
+
+@pytest.fixture
+def many_orders(monkeypatch):
+    rows = [dict(RAW_ORDER, ticket=555444333 + i, time_setup=EPOCH + i * 60) for i in range(50)]
+    monkeypatch.setattr(orders_module, "get_orders", lambda *a, **k: rows)
+
+
+def test_deals_are_newest_first(many_deals):
+    df = get_deals_as_dataframe(None)
+    assert df.index.is_monotonic_decreasing
+
+
+def test_deals_limit_keeps_the_most_recent(many_deals):
+    df = get_deals_as_dataframe(None, limit=5)
+    assert len(df) == 5
+    # The newest row is the last one generated.
+    assert df["ticket"].iloc[0] == 987654321 + 49
+
+
+def test_deals_report_the_truncation(many_deals):
+    df = get_deals_as_dataframe(None, limit=5)
+    assert df.attrs["truncated"] == [{"returned": 5, "available": 50}]
+
+
+def test_deals_report_nothing_when_everything_fits(many_deals):
+    assert get_deals_as_dataframe(None, limit=500).attrs["truncated"] == []
+
+
+def test_deals_reject_a_bad_limit(many_deals):
+    with pytest.raises(ValueError, match="limit"):
+        get_deals_as_dataframe(None, limit=0)
+
+
+def test_orders_are_newest_first(many_orders):
+    assert get_orders_as_dataframe(None).index.is_monotonic_decreasing
+
+
+def test_orders_limit_keeps_the_most_recent(many_orders):
+    df = get_orders_as_dataframe(None, limit=5)
+    assert len(df) == 5
+    assert df["ticket"].iloc[0] == 555444333 + 49
+
+
+def test_orders_report_the_truncation(many_orders):
+    assert get_orders_as_dataframe(None, limit=5).attrs["truncated"] == [
+        {"returned": 5, "available": 50}
+    ]

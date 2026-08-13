@@ -13,6 +13,27 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional, Union, Tuple
 
 
+def validate_limit(limit: Optional[int]) -> Optional[int]:
+    """Check a row limit, which must be a positive integer or None.
+
+    Args:
+        limit: The requested cap on rows.
+
+    Returns:
+        Optional[int]: The limit, unchanged.
+
+    Raises:
+        ValueError: If it is not a positive integer.
+    """
+    if limit is None:
+        return None
+    if isinstance(limit, bool) or not isinstance(limit, int):
+        raise ValueError(f"Expected an integer limit, got {type(limit).__name__}")
+    if limit < 1:
+        raise ValueError(f"Expected a limit of at least 1, got {limit}")
+    return limit
+
+
 def convert_positions_to_dataframe(
     positions: Any,
     columns_mapping: Optional[Dict[str, str]] = None,

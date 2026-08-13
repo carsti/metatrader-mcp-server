@@ -12,6 +12,7 @@ from .order import get_all_pending_orders, get_pending_orders_by_symbol, get_pen
 from .order import place_market_order, place_pending_order, modify_position, modify_pending_order
 from .order import close_position, close_all_positions, close_all_positions_by_symbol, close_all_profitable_positions, close_all_losing_positions
 from .order import cancel_pending_order, cancel_all_pending_orders, cancel_pending_orders_by_symbol
+from .order import calculate_margin, calculate_profit, calculate_price_target
 
 
 class MT5Order:
@@ -57,8 +58,8 @@ class MT5Order:
         return get_pending_orders_by_id(self._connection, id)
 
 
-    def place_market_order(self, *, type: str, symbol: str, volume: Union[float, int]):
-        return place_market_order(self._connection, type=type, symbol=symbol, volume=volume)
+    def place_market_order(self, *, type: str, symbol: str, volume: Union[float, int], stop_loss: Optional[Union[float, int]] = 0.0, take_profit: Optional[Union[float, int]] = 0.0):
+        return place_market_order(self._connection, type=type, symbol=symbol, volume=volume, stop_loss=stop_loss, take_profit=take_profit)
     
     
     def place_pending_order(self, *, type: str, symbol: str, volume: Union[float, int], price: Union[float, int], stop_loss: Optional[Union[float, int]] = 0.0, take_profit: Optional[Union[float, int]] = 0.0):
@@ -81,24 +82,39 @@ class MT5Order:
         return cancel_pending_order(self._connection, id)
 
 
-    def close_all_positions(self):
-        return close_all_positions(self._connection)
+    def close_all_positions(self, dry_run: bool = False):
+        return close_all_positions(self._connection, dry_run)
 
 
-    def close_all_positions_by_symbol(self, symbol: str):
-        return close_all_positions_by_symbol(self._connection, symbol)
+    def close_all_positions_by_symbol(self, symbol: str, dry_run: bool = False):
+        return close_all_positions_by_symbol(self._connection, symbol, dry_run)
 
 
-    def close_all_profitable_positions(self):
-        return close_all_profitable_positions(self._connection)
+    def close_all_profitable_positions(self, dry_run: bool = False):
+        return close_all_profitable_positions(self._connection, dry_run)
 
-    def close_all_losing_positions(self):
-        return close_all_losing_positions(self._connection)
+    def close_all_losing_positions(self, dry_run: bool = False):
+        return close_all_losing_positions(self._connection, dry_run)
 
 
-    def cancel_all_pending_orders(self):
-        return cancel_all_pending_orders(self._connection)
+    def cancel_all_pending_orders(self, dry_run: bool = False):
+        return cancel_all_pending_orders(self._connection, dry_run)
 
-        
-    def cancel_pending_orders_by_symbol(self, symbol: str):
-        return cancel_pending_orders_by_symbol(self._connection, symbol)
+
+    def cancel_pending_orders_by_symbol(self, symbol: str, dry_run: bool = False):
+        return cancel_pending_orders_by_symbol(self._connection, symbol, dry_run)
+
+
+    # ── Pre-trade calculators ──────────────────────────────────────────────
+    # These talk to the terminal directly and take no connection argument.
+
+    def calculate_margin(self, *, order_type: Union[str, int], symbol: str, volume: Union[float, int], price: Union[float, int]) -> Optional[float]:
+        return calculate_margin(order_type, symbol, volume, price)
+
+
+    def calculate_profit(self, *, order_type: Union[str, int], symbol: str, volume: Union[float, int], price_open: Union[float, int], price_close: Union[float, int]) -> Optional[float]:
+        return calculate_profit(order_type, symbol, volume, price_open, price_close)
+
+
+    def calculate_price_target(self, *, order_type: Union[str, int], symbol: str, volume: Union[float, int], entry_price: Union[float, int], target: Union[float, int]) -> Optional[float]:
+        return calculate_price_target(order_type, symbol, volume, entry_price, target)

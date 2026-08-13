@@ -10,6 +10,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import List, Optional, Union
 
+from metatrader_client.client import MT5Client
 from metatrader_mcp.utils import init, get_client, candles_to_csv, frame_to_csv
 
 # ────────────────────────────────────────────────────────────────────────────────
@@ -17,11 +18,12 @@ from metatrader_mcp.utils import init, get_client, candles_to_csv, frame_to_csv
 # ────────────────────────────────────────────────────────────────────────────────
 @dataclass
 class AppContext:
-	client: str
+	client: MT5Client
 
 @asynccontextmanager
 async def app_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
 
+	client = None
 	try:
 		client = init(
 			os.getenv("login"),
@@ -29,9 +31,21 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
 			os.getenv("server"),
 			os.getenv("MT5_PATH")
 		)
+		# init returns None when credentials are missing. Starting anyway would
+		# leave every tool failing on a None client with an error that says
+		# nothing about the cause, so refuse to come up instead.
+		if client is None:
+			raise RuntimeError(
+				"MetaTrader 5 credentials are missing. Set login, password and server "
+				"in the environment (or LOGIN/PASSWORD/SERVER), or pass --login, "
+				"--password and --server."
+			)
 		yield AppContext(client=client)
 	finally:
-		client.disconnect()
+		# Guarded: on a failed startup there is nothing to disconnect, and an
+		# error here would replace the exception that explains what went wrong.
+		if client is not None:
+			client.disconnect()
 
 # ────────────────────────────────────────────────────────────────────────────────
 # 2) Instantiate FastMCP as `mcp` (must be named `mcp`, `server`, or `app`)
@@ -53,18 +67,28 @@ def get_account_info(ctx: Context) -> dict:
 	return client.account.get_trade_statistics()
 
 @mcp.tool()
-def get_deals(ctx: Context, from_date: Optional[str] = None, to_date: Optional[str] = None, symbol: Optional[str] = None) -> str:
-	"""Get historical deals as CSV, indexed by time. Date input in format: 'YYYY-MM-DD'. Defaults to the last 30 days."""
+def get_deals(ctx: Context, from_date: Optional[str] = None, to_date: Optional[str] = None, symbol: Optional[str] = None, limit: int = 500) -> str:
+	"""Get historical deals as CSV, newest first, indexed by time.
+
+	Date input in format: 'YYYY-MM-DD'. Defaults to the last 30 days.
+	limit caps the rows (default 500), keeping the most recent; dropped rows are
+	reported in a trailing '# truncated' block.
+	"""
 	client = get_client(ctx)
-	df = client.history.get_deals_as_dataframe(from_date=from_date, to_date=to_date, group=symbol)
+	df = client.history.get_deals_as_dataframe(from_date=from_date, to_date=to_date, group=symbol, limit=limit)
 	# The index holds the timestamp here, so it is worth its bytes.
 	return frame_to_csv(df, index=True)
 
 @mcp.tool()
-def get_orders(ctx: Context, from_date: Optional[str] = None, to_date: Optional[str] = None, symbol: Optional[str] = None) -> str:
-	"""Get historical orders as CSV, indexed by setup time. Date input in format: 'YYYY-MM-DD'. Defaults to the last 30 days."""
+def get_orders(ctx: Context, from_date: Optional[str] = None, to_date: Optional[str] = None, symbol: Optional[str] = None, limit: int = 500) -> str:
+	"""Get historical orders as CSV, newest first, indexed by setup time.
+
+	Date input in format: 'YYYY-MM-DD'. Defaults to the last 30 days.
+	limit caps the rows (default 500), keeping the most recent; dropped rows are
+	reported in a trailing '# truncated' block.
+	"""
 	client = get_client(ctx)
-	df = client.history.get_orders_as_dataframe(from_date=from_date, to_date=to_date, group=symbol)
+	df = client.history.get_orders_as_dataframe(from_date=from_date, to_date=to_date, group=symbol, limit=limit)
 	return frame_to_csv(df, index=True)
 
 @mcp.tool()
@@ -141,14 +165,14 @@ def get_symbol_info(ctx: Context, symbol_name: str, full: bool = False) -> dict:
 	return client.market.get_symbol_info(symbol_name=symbol_name, full=full)
 
 @mcp.tool()
-def get_all_symbols(ctx: Context) -> list:
+def get_all_symbols(ctx: Context) -> List[str]:
 	"""Get a list of all available market symbols. Brokers commonly expose
 	thousands, so prefer get_symbols with a group pattern when you can."""
 	client = get_client(ctx)
 	return client.market.get_symbols()
 
 @mcp.tool()
-def get_symbols(ctx: Context, group: Optional[str] = None) -> list:
+def get_symbols(ctx: Context, group: Optional[str] = None) -> List[str]:
 	"""
 	Get a list of available market symbols. Filter symbols by group pattern (e.g., '*USD*').
 	"""
@@ -160,57 +184,112 @@ def get_symbols(ctx: Context, group: Optional[str] = None) -> list:
 # ────────────────────────────────────────────────────────────────────────────────
 
 @mcp.tool()
-def get_all_positions(ctx: Context) -> list:
-	"""Get all open positions."""
+def get_all_positions(ctx: Context) -> str:
+	"""Get all open positions as CSV."""
 	client = get_client(ctx)
 	df = client.order.get_all_positions()
 	return frame_to_csv(df)
 
 @mcp.tool()
-def get_positions_by_symbol(ctx: Context, symbol: str) -> list:
-	"""Get open positions for a specific symbol."""
+def get_positions_by_symbol(ctx: Context, symbol: str) -> str:
+	"""Get open positions for a specific symbol as CSV."""
 	client = get_client(ctx)
 	df = client.order.get_positions_by_symbol(symbol=symbol)
 	return frame_to_csv(df)
 
 @mcp.tool()
-def get_positions_by_id(ctx: Context, id: Union[int, str]) -> list:
-	"""Get open positions by ID."""
+def get_positions_by_currency(ctx: Context, currency: str) -> str:
+	"""Get open positions whose symbol involves a currency (e.g., 'USD') as CSV."""
+	client = get_client(ctx)
+	df = client.order.get_positions_by_currency(currency=currency)
+	return frame_to_csv(df)
+
+@mcp.tool()
+def get_positions_by_id(ctx: Context, id: Union[int, str]) -> str:
+	"""Get open positions by ID as CSV."""
 	client = get_client(ctx)
 	df = client.order.get_positions_by_id(id=id)
 	return frame_to_csv(df)
 
 @mcp.tool()
-def get_all_pending_orders(ctx: Context) -> list:
-	"""Get all pending orders."""
+def get_all_pending_orders(ctx: Context) -> str:
+	"""Get all pending orders as CSV."""
 	client = get_client(ctx)
 	df = client.order.get_all_pending_orders()
 	return frame_to_csv(df)
 
 @mcp.tool()
-def get_pending_orders_by_symbol(ctx: Context, symbol: str) -> list:
-	"""Get pending orders for a specific symbol."""
+def get_pending_orders_by_symbol(ctx: Context, symbol: str) -> str:
+	"""Get pending orders for a specific symbol as CSV."""
 	client = get_client(ctx)
 	df = client.order.get_pending_orders_by_symbol(symbol=symbol)
 	return frame_to_csv(df)
 
 @mcp.tool()
-def get_pending_orders_by_id(ctx: Context, id: Union[int, str]) -> list:
-	"""Get pending orders by id."""
+def get_pending_orders_by_currency(ctx: Context, currency: str) -> str:
+	"""Get pending orders whose symbol involves a currency (e.g., 'USD') as CSV."""
+	client = get_client(ctx)
+	df = client.order.get_pending_orders_by_currency(currency=currency)
+	return frame_to_csv(df)
+
+@mcp.tool()
+def get_pending_orders_by_id(ctx: Context, id: Union[int, str]) -> str:
+	"""Get pending orders by id as CSV."""
 	client = get_client(ctx)
 	df = client.order.get_pending_orders_by_id(id=id)
 	return frame_to_csv(df)
 
+# ────────────────────────────────────────────────────────────────────────────────
+# Pre-trade calculators
+# ────────────────────────────────────────────────────────────────────────────────
+
 @mcp.tool()
-def place_market_order(ctx: Context, symbol: str, volume: float, type: str) -> dict:
+def calculate_margin(ctx: Context, order_type: str, symbol: str, volume: float, price: float) -> Optional[float]:
+	"""Margin required to open a position, without placing it. Compare against
+	free_margin from get_account_info to size a trade you can actually afford.
+
+	order_type: 'BUY' or 'SELL'. price: the entry price to assume.
+	"""
+	client = get_client(ctx)
+	return client.order.calculate_margin(order_type=order_type, symbol=symbol, volume=volume, price=price)
+
+@mcp.tool()
+def calculate_profit(ctx: Context, order_type: str, symbol: str, volume: float, price_open: float, price_close: float) -> Optional[float]:
+	"""Profit a position would make moving from price_open to price_close, in the
+	account currency. Use it to check a take profit or stop loss is worth its risk.
+
+	order_type: 'BUY' or 'SELL'.
+	"""
+	client = get_client(ctx)
+	return client.order.calculate_profit(order_type=order_type, symbol=symbol, volume=volume, price_open=price_open, price_close=price_close)
+
+@mcp.tool()
+def calculate_price_target(ctx: Context, order_type: str, symbol: str, volume: float, entry_price: float, target: float) -> Optional[float]:
+	"""The price at which a position reaches a given profit or loss target, in the
+	account currency. Use it to place a stop loss at a chosen risk amount.
+
+	order_type: 'BUY' or 'SELL'. target: positive for profit, negative for loss.
+	"""
+	client = get_client(ctx)
+	return client.order.calculate_price_target(order_type=order_type, symbol=symbol, volume=volume, entry_price=entry_price, target=target)
+
+@mcp.tool()
+def place_market_order(ctx: Context, symbol: str, volume: float, type: str, stop_loss: Optional[float] = 0.0, take_profit: Optional[float] = 0.0) -> dict:
 	"""
 	Place a market order. Parameters:
 		symbol: Symbol name (e.g., 'EURUSD')
 		volume: Lot size. (e.g. 1.5)
 		type: Order type ('BUY' or 'SELL')
+		stop_loss (optional): Stop loss price. 0.0 leaves the position unprotected.
+		take_profit (optional): Take profit price. 0.0 for none.
+
+	Set stop_loss here rather than calling modify_position afterwards: between the
+	two calls the position carries unbounded risk. Check get_symbol_info first -
+	volume_min, volume_max and volume_step decide whether the volume is accepted,
+	and digits decides price rounding.
 	"""
 	client = get_client(ctx)
-	return client.order.place_market_order(symbol=symbol, volume=volume, type=type)
+	return client.order.place_market_order(symbol=symbol, volume=volume, type=type, stop_loss=stop_loss, take_profit=take_profit)
 
 @mcp.tool()
 def place_pending_order(ctx: Context, symbol: str, volume: float, type: str, price: float, stop_loss: Optional[Union[int, float]] = 0.0, take_profit: Optional[Union[int, float]] = 0.0) -> dict:
@@ -248,41 +327,45 @@ def cancel_pending_order(ctx: Context, id: Union[int, str]) -> dict:
 	client = get_client(ctx)
 	return client.order.cancel_pending_order(id=id)
 
-@mcp.tool()
-def close_all_positions(ctx: Context) -> dict:
-	"""Close all open positions."""
-	client = get_client(ctx)
-	return client.order.close_all_positions()
+# Every bulk operation below takes dry_run. Call it with dry_run=True first when
+# the scope is not obvious: the result lists exactly what would be affected, with
+# symbol, volume and profit, and nothing is sent to the terminal.
 
 @mcp.tool()
-def close_all_positions_by_symbol(ctx: Context, symbol: str) -> dict:
-	"""Close all open positions for a specific symbol."""
+def close_all_positions(ctx: Context, dry_run: bool = False) -> dict:
+	"""Close all open positions. Set dry_run=True to list what would be closed instead."""
 	client = get_client(ctx)
-	return client.order.close_all_positions_by_symbol(symbol=symbol)
+	return client.order.close_all_positions(dry_run=dry_run)
 
 @mcp.tool()
-def close_all_profitable_positions(ctx: Context) -> dict:
-	"""Close all profitable positions."""
+def close_all_positions_by_symbol(ctx: Context, symbol: str, dry_run: bool = False) -> dict:
+	"""Close all open positions for a specific symbol. Set dry_run=True to list what would be closed instead."""
 	client = get_client(ctx)
-	return client.order.close_all_profitable_positions()
+	return client.order.close_all_positions_by_symbol(symbol=symbol, dry_run=dry_run)
 
 @mcp.tool()
-def close_all_losing_positions(ctx: Context) -> dict:
-	"""Close all losing positions."""
+def close_all_profitable_positions(ctx: Context, dry_run: bool = False) -> dict:
+	"""Close all profitable positions. Set dry_run=True to list what would be closed instead."""
 	client = get_client(ctx)
-	return client.order.close_all_losing_positions()
+	return client.order.close_all_profitable_positions(dry_run=dry_run)
 
 @mcp.tool()
-def cancel_all_pending_orders(ctx: Context) -> dict:
-	"""Cancel all pending orders."""
+def close_all_losing_positions(ctx: Context, dry_run: bool = False) -> dict:
+	"""Close all losing positions. Set dry_run=True to list what would be closed instead."""
 	client = get_client(ctx)
-	return client.order.cancel_all_pending_orders()
+	return client.order.close_all_losing_positions(dry_run=dry_run)
 
 @mcp.tool()
-def cancel_pending_orders_by_symbol(ctx: Context, symbol: str) -> dict:
-	"""Cancel all pending orders for a specific symbol."""
+def cancel_all_pending_orders(ctx: Context, dry_run: bool = False) -> dict:
+	"""Cancel all pending orders. Set dry_run=True to list what would be cancelled instead."""
 	client = get_client(ctx)
-	return client.order.cancel_pending_orders_by_symbol(symbol=symbol)
+	return client.order.cancel_all_pending_orders(dry_run=dry_run)
+
+@mcp.tool()
+def cancel_pending_orders_by_symbol(ctx: Context, symbol: str, dry_run: bool = False) -> dict:
+	"""Cancel all pending orders for a specific symbol. Set dry_run=True to list what would be cancelled instead."""
+	client = get_client(ctx)
+	return client.order.cancel_pending_orders_by_symbol(symbol=symbol, dry_run=dry_run)
 
 if __name__ == "__main__":
 	load_dotenv()
