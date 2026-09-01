@@ -9,18 +9,28 @@ import pandas as pd # Import pandas for creating a sample DataFrame
 from unittest.mock import MagicMock, patch
 
 from metatrader_openapi.main import app # Your FastAPI app
+import metatrader_openapi.main as main_module
 from metatrader_client.exceptions import ConnectionError as MT5ConnectionError # Import custom exception
 
 @pytest.fixture
 def mock_market_client_methods(monkeypatch):
     # Mock for client.market.get_symbol_info
     mock_get_info = MagicMock()
-    monkeypatch.setattr("metatrader_openapi.routers.market.client.market.get_symbol_info", mock_get_info)
-    
-    # Mock for client.market.get_candles_by_date (will be used in next plan step)
+    # Mock for client.market.get_candles_by_date
     mock_get_candles = MagicMock()
-    monkeypatch.setattr("metatrader_openapi.routers.market.client.market.get_candles_by_date", mock_get_candles)
-    
+
+    class DummyMarket:
+        get_symbol_info = mock_get_info
+        get_candles_by_date = mock_get_candles
+
+    class DummyClient:
+        market = DummyMarket()
+        def disconnect(self):
+            pass
+
+    monkeypatch.setattr(main_module, "load_dotenv", lambda: None)
+    monkeypatch.setattr(main_module, "init", lambda login, password, server, path=None: DummyClient())
+
     return mock_get_info, mock_get_candles # Return both mocks
 
 def test_get_symbol_info_success(mock_market_client_methods):
@@ -132,8 +142,8 @@ def test_get_candles_by_date_success(mock_market_client_methods):
     mock_get_candles.assert_called_once_with(
         symbol_name=symbol_name,
         timeframe=timeframe,
-        date_from=date_from_dt, 
-        date_to=date_to_dt     
+        from_date=date_from_dt, 
+        to_date=date_to_dt     
     )
 
 def test_get_candles_by_date_no_data(mock_market_client_methods):
@@ -158,8 +168,8 @@ def test_get_candles_by_date_no_data(mock_market_client_methods):
     mock_get_candles.assert_called_once_with(
         symbol_name=symbol_name,
         timeframe=timeframe,
-        date_from=date_from_dt,
-        date_to=date_to_dt
+        from_date=date_from_dt,
+        to_date=date_to_dt
     )
 
 def test_get_candles_by_date_value_error(mock_market_client_methods):
@@ -184,8 +194,8 @@ def test_get_candles_by_date_value_error(mock_market_client_methods):
     mock_get_candles.assert_called_once_with(
         symbol_name=symbol_name,
         timeframe=timeframe,
-        date_from=date_from_dt,
-        date_to=date_to_dt
+        from_date=date_from_dt,
+        to_date=date_to_dt
     )
 
 def test_get_candles_by_date_connection_error(mock_market_client_methods):
@@ -210,6 +220,6 @@ def test_get_candles_by_date_connection_error(mock_market_client_methods):
     mock_get_candles.assert_called_once_with(
         symbol_name=symbol_name,
         timeframe=timeframe,
-        date_from=date_from_dt,
-        date_to=date_to_dt
+        from_date=date_from_dt,
+        to_date=date_to_dt
     )
