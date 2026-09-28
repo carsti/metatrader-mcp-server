@@ -61,12 +61,13 @@ def get_fxmacrodata_release_calendar(currency: str = "usd", limit: int = 25, min
 	"""
 	limit_count = max(1, min(int(limit), 100))
 	params = {"limit": str(limit_count)}
+	headers = {"User-Agent": "metatrader-mcp-fxmacrodata/1.0"}
 	api_key = os.getenv("FXMACRODATA_API_KEY")
 	if api_key:
-		params["api_key"] = api_key
+		headers["X-API-Key"] = api_key
 
 	url = f"{FXMACRODATA_BASE_URL}/calendar/{currency.lower()}?{urlencode(params)}"
-	request = Request(url, headers={"User-Agent": "metatrader-mcp-fxmacrodata/1.0"})
+	request = Request(url, headers=headers)
 	with urlopen(request, timeout=20) as response:
 		payload = json.load(response)
 
