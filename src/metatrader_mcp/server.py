@@ -10,12 +10,23 @@ from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Optional, Union
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from metatrader_mcp.utils import init, get_client
 
 FXMACRODATA_BASE_URL = "https://api.fxmacrodata.com/v1"
+
+
+class _NoRedirect(HTTPRedirectHandler):
+	"""Never follow redirects, so the FXMacroData key is not sent to another host."""
+
+	def redirect_request(self, req, fp, code, msg, headers, newurl):
+		return None
+
+
+_FXMACRODATA_OPENER = build_opener(_NoRedirect)
 
 # ────────────────────────────────────────────────────────────────────────────────
 # 1) Lifespan context definition
@@ -62,16 +73,27 @@ def get_fxmacrodata_release_calendar(currency: str = "usd", limit: int = 25, min
 	limit_count = max(1, min(int(limit), 100))
 	params = {"limit": str(limit_count)}
 	headers = {"User-Agent": "metatrader-mcp-fxmacrodata/1.0"}
-	api_key = os.getenv("FXMACRODATA_API_KEY")
+	api_key = (os.getenv("FXMACRODATA_API_KEY") or "").strip()
 	if api_key:
+		if any(ord(char) < 33 or ord(char) == 127 for char in api_key):
+			raise ValueError("FXMACRODATA_API_KEY contains whitespace or control characters")
 		headers["X-API-Key"] = api_key
 
 	url = f"{FXMACRODATA_BASE_URL}/calendar/{currency.lower()}?{urlencode(params)}"
 	request = Request(url, headers=headers)
-	with urlopen(request, timeout=20) as response:
-		payload = json.load(response)
+	try:
+		with _FXMACRODATA_OPENER.open(request, timeout=20) as response:
+			payload = json.load(response)
+	except HTTPError as e:
+		raise RuntimeError(f"FXMacroData request failed with HTTP {e.code}") from None
+	except URLError as e:
+		raise RuntimeError(f"FXMacroData request failed: {e.reason}") from None
 
-	events = payload.get("data", [])
+	events = payload.get("data") if isinstance(payload, dict) else None
+	if not isinstance(events, list):
+		detail = payload.get("detail") if isinstance(payload, dict) else None
+		raise RuntimeError(f"FXMacroData returned an unexpected response: {detail or 'missing data list'}")
+	events = [event for event in events if isinstance(event, dict)]
 	if min_tier is not None:
 		events = [
 			event for event in events
