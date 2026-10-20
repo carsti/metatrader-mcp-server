@@ -2,6 +2,7 @@
 import os
 import argparse
 import logging
+import json
 from dotenv import load_dotenv
 
 from mcp.server.fastmcp import FastMCP, Context
@@ -9,8 +10,23 @@ from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Optional, Union
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from metatrader_mcp.utils import init, get_client
+
+FXMACRODATA_BASE_URL = "https://api.fxmacrodata.com/v1"
+
+
+class _NoRedirect(HTTPRedirectHandler):
+	"""Never follow redirects, so the FXMacroData key is not sent to another host."""
+
+	def redirect_request(self, req, fp, code, msg, headers, newurl):
+		return None
+
+
+_FXMACRODATA_OPENER = build_opener(_NoRedirect)
 
 # ────────────────────────────────────────────────────────────────────────────────
 # 1) Lifespan context definition
@@ -45,6 +61,57 @@ mcp = FastMCP(
 # ────────────────────────────────────────────────────────────────────────────────
 # 3) Register tools with @mcp.tool()
 # ────────────────────────────────────────────────────────────────────────────────
+
+@mcp.tool()
+def get_fxmacrodata_release_calendar(currency: str = "usd", limit: int = 25, min_tier: Optional[int] = 1) -> dict:
+	"""Get official macro release-calendar events for trade planning.
+
+	Use this read-only tool to check market-moving releases such as CPI, NFP,
+	GDP, PCE, retail sales, and central-bank decisions before placing or
+	managing MetaTrader positions.
+	"""
+	limit_count = max(1, min(int(limit), 100))
+	if min_tier is not None and (type(min_tier) is not int or min_tier < 1):
+		raise ValueError("min_tier must be a positive integer or None")
+	params = {"limit": str(limit_count)}
+	headers = {"User-Agent": "metatrader-mcp-fxmacrodata/1.0"}
+	api_key = (os.getenv("FXMACRODATA_API_KEY") or "").strip()
+	if api_key:
+		if any(ord(char) < 33 or ord(char) == 127 for char in api_key):
+			raise ValueError("FXMACRODATA_API_KEY contains whitespace or control characters")
+		headers["X-API-Key"] = api_key
+
+	url = f"{FXMACRODATA_BASE_URL}/calendar/{currency.lower()}?{urlencode(params)}"
+	request = Request(url, headers=headers)
+	try:
+		with _FXMACRODATA_OPENER.open(request, timeout=20) as response:
+			payload = json.load(response)
+	except HTTPError as e:
+		raise RuntimeError(f"FXMacroData request failed with HTTP {e.code}") from None
+	except (URLError, OSError):
+		raise RuntimeError("FXMacroData request failed") from None
+	except ValueError:
+		raise RuntimeError("FXMacroData returned invalid JSON") from None
+
+	events = payload.get("data") if isinstance(payload, dict) else None
+	if (not isinstance(events, list)
+		or not all(isinstance(event, dict) for event in events)
+		or payload.get("error") or payload.get("detail")):
+		raise RuntimeError("FXMacroData returned an unexpected response")
+	if min_tier is not None:
+		events = [
+			event for event in events
+			if type(event.get("market_tier")) is int
+			and 1 <= event["market_tier"] <= min_tier
+		]
+
+	events = events[:limit_count]
+	return {
+		"currency": payload.get("currency", currency.upper()),
+		"timezone": payload.get("timezone"),
+		"data_quality": payload.get("data_quality"),
+		"events": events,
+	}
 
 @mcp.tool()
 def get_account_info(ctx: Context) -> dict:
