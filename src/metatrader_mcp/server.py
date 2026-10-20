@@ -71,6 +71,8 @@ def get_fxmacrodata_release_calendar(currency: str = "usd", limit: int = 25, min
 	managing MetaTrader positions.
 	"""
 	limit_count = max(1, min(int(limit), 100))
+	if min_tier is not None and (type(min_tier) is not int or min_tier < 1):
+		raise ValueError("min_tier must be a positive integer or None")
 	params = {"limit": str(limit_count)}
 	headers = {"User-Agent": "metatrader-mcp-fxmacrodata/1.0"}
 	api_key = (os.getenv("FXMACRODATA_API_KEY") or "").strip()
@@ -86,18 +88,21 @@ def get_fxmacrodata_release_calendar(currency: str = "usd", limit: int = 25, min
 			payload = json.load(response)
 	except HTTPError as e:
 		raise RuntimeError(f"FXMacroData request failed with HTTP {e.code}") from None
-	except URLError as e:
-		raise RuntimeError(f"FXMacroData request failed: {e.reason}") from None
+	except (URLError, OSError):
+		raise RuntimeError("FXMacroData request failed") from None
+	except ValueError:
+		raise RuntimeError("FXMacroData returned invalid JSON") from None
 
 	events = payload.get("data") if isinstance(payload, dict) else None
-	if not isinstance(events, list):
-		detail = payload.get("detail") if isinstance(payload, dict) else None
-		raise RuntimeError(f"FXMacroData returned an unexpected response: {detail or 'missing data list'}")
-	events = [event for event in events if isinstance(event, dict)]
+	if (not isinstance(events, list)
+		or not all(isinstance(event, dict) for event in events)
+		or payload.get("error") or payload.get("detail")):
+		raise RuntimeError("FXMacroData returned an unexpected response")
 	if min_tier is not None:
 		events = [
 			event for event in events
-			if int(event.get("market_tier") or 99) <= min_tier
+			if type(event.get("market_tier")) is int
+			and 1 <= event["market_tier"] <= min_tier
 		]
 
 	events = events[:limit_count]
